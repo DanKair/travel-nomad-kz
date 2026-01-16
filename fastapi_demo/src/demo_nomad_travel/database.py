@@ -3,8 +3,8 @@ from sqlalchemy.orm import sessionmaker
 from models import Base
 
 # Using an in-memory SQLite database for this example.
-# To use a file-based database, change the URL to: "sqlite:///nomad_travel.db"
-DATABASE_URL = "sqlite:///:memory:"
+# /// is used for sqlite, and ./nomad_travel.db means it will create nomad_travel.db file in this directory
+DATABASE_URL = "sqlite:///./nomad_travel.db"
 
 engine = create_engine(DATABASE_URL, echo=True)
 
@@ -18,3 +18,14 @@ def create_db_and_tables():
     print("Creating database and tables...")
     Base.metadata.create_all(bind=engine)
     print("Database and tables created.")
+
+# Creates all tables and DB itself
+Base.metadata.create_all(bind=engine)
+
+# Dependency to get a DB session
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
