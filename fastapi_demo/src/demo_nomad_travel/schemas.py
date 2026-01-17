@@ -5,9 +5,8 @@ from slugify import slugify
 
 class TouristPointBase(BaseModel):
     name: str = Field(max_length=100)
-    short_description: str =  None
-    long_description: str | None
-
+    short_description: str | None = None
+    long_description: str | None = None
 
 class TouristPoint(TouristPointBase):
     id: int
@@ -23,7 +22,6 @@ class RegionBase(BaseModel):
 
 class RegionCreate(RegionBase):
     slug: str | None = None
-    # description: str | None = None # Commented to make create_region endpoint work simply
     tourist_points: list[TouristPoint] = []
 
     class Config:
@@ -40,12 +38,13 @@ class RegionCreate(RegionBase):
 
 class Region(RegionBase):
     '''
-    This class represents a region used for API Responses, cause it contain "field" lol.
+    This class represents a region used for API Responses, UPDATE operations particularly,
+    cause it contains "id" field lol.
     Actually I need to improve this, but later on...
     '''
     id: int
     slug: str
-    tourist_points: list[TouristPoint] = []
+    tourist_points: list[TouristPoint]
 
     class Config:
         orm_mode = True
