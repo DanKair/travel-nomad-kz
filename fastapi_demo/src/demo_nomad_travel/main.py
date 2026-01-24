@@ -22,6 +22,8 @@ def list_regions(db: Session = Depends(get_db)):
     regions = db.query(models.Region).all()
     return regions
 
+"""
+# This ENDPOINT requires unnecessary fields, that's why I decided to remove it
 @app.post("/regions/", response_model=schemas.Region)
 def create_region(region: schemas.RegionCreate, db: Session = Depends(get_db)):
     # You can submit only region_name field actually here, slug would be generated automatically
@@ -31,6 +33,15 @@ def create_region(region: schemas.RegionCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_region)
     return db_region
+"""
+# Simpler CREATE Endpoint that requires only name field for "Region" model
+@app.post("/regions/create/", response_model=schemas.Region)
+def create_region(region_name: str, db: Session = Depends(get_db)):
+    region = models.Region(name=region_name)
+    db.add(region)
+    db.commit()
+    db.refresh(region)
+    return region
 
 @app.patch("/regions/{region_id}", response_model=schemas.Region)
 def update_region(region_id: int, region_name: str, db: Session = Depends(get_db)):

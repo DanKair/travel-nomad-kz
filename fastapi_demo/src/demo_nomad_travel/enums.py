@@ -10,5 +10,8 @@ class TransportMode(str, Enum):
     MARSHRUTKA = "marshrutka"
 
 class NodeType(str, Enum):
-    HUB = "hub"  # Airport, Station
-    TOURIST_POINT = "tourist_point"
+    CITY = "city"
+    # TransportHubs (airports, train stations, bus stops)
+    AIRPORT = "airport"
+    STATION = "station"
+    BUS_STOP = "bus_stop"
