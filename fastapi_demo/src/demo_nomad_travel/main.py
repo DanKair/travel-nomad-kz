@@ -43,6 +43,13 @@ def create_region(region_name: str, db: Session = Depends(get_db)):
     db.refresh(region)
     return region
 
+@app.get("/regions/{region_id}", response_model=schemas.Region)
+def get_region(region_id: int, db: Session = Depends(get_db)):
+    db_region = db.query(models.Region).filter(models.Region.id == region_id).first()
+    if db_region is None:
+        raise HTTPException(status_code=404, detail="Region not found")
+    return db_region
+
 @app.patch("/regions/{region_id}", response_model=schemas.Region)
 def update_region(region_id: int, region_name: str, db: Session = Depends(get_db)):
     # 1. Find the region in the database by using "id" field
@@ -55,18 +62,25 @@ def update_region(region_id: int, region_name: str, db: Session = Depends(get_db
     # Making our slug field also change
     from slugify import slugify
     target_region.slug = slugify(region_name)
+    # TODO: Support updating tourist_points field
     db.commit() # Saving the results
     db.refresh(target_region)
     return target_region
 
-
-@app.get("/regions/{region_id}", response_model=schemas.Region)
-def get_region(region_id: int, db: Session = Depends(get_db)):
-    db_region = db.query(models.Region).filter(models.Region.id == region_id).first()
-    if db_region is None:
+@app.delete("/regions/{region_id}", response_model=schemas.Region)
+def delete_region(region_id: int, db: Session = Depends(get_db)):
+    target_region = db.query(models.Region).filter(models.Region.id == region_id).first()
+    if target_region is None:
         raise HTTPException(status_code=404, detail="Region not found")
-    return db_region
+    db.delete(target_region)
+    db.commit()
+    db.refresh(target_region)
+    return f"{target_region.name} has been removed."
 
-@app.get("/")
-def read_root():
-    return {"Hello": "World"}
+# TouristPoint Endpoints
+@app.get("/tourist-points/", response_model=list[schemas.TouristPoint])
+def list_tourist_points(db: Session = Depends(get_db)):
+    tourist_points = db.query(models.TouristPoint).all()
+    return tourist_points
+
+# @app.post("/tourist-points/create/")

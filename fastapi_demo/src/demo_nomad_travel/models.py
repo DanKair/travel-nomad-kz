@@ -9,7 +9,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from enums import NodeType, TransportMode
+from enums import NodeType, TransportMode, AccessType
 
 
 class Base(DeclarativeBase):
@@ -73,6 +73,12 @@ class TouristPoint(Base):
     # Relationships
     region: Mapped['Region'] = relationship(back_populates='tourist_points')
     category: Mapped['TouristPointCategory'] = relationship(back_populates='tourist_points')
+    # PointNode Related (Stores list of PointNodes)
+    point_nodes: Mapped[list["PointNode"]] = relationship(
+        back_populates="tourist_point",
+        cascade="all, delete-orphan"
+    )
+
 
 class TouristPointCategory(Base):
     __tablename__ = 'tourist_point_categories'
@@ -99,7 +105,6 @@ class TouristPointCategory(Base):
     )
 
 
-
 class Node(Base):
     '''
     Geographic entity in the transportation network.
@@ -121,6 +126,7 @@ class Node(Base):
     lon: Mapped[float] = mapped_column(Float)
     type: Mapped[NodeType] = mapped_column(SQLEnum(NodeType))
 
+    # Relationships
     outgoing_segments: Mapped[List["TransportSegment"]] = relationship(
         "TransportSegment",
         foreign_keys="TransportSegment.from_node",
@@ -130,6 +136,11 @@ class Node(Base):
         "TransportSegment",
         foreign_keys="TransportSegment.to_node",
         back_populates="to_node_rel",
+    )
+    # PointNode Related (Stores list of PointNodes)
+    point_nodes: Mapped[list["PointNode"]] = relationship(
+        back_populates="node",
+        cascade="all, delete-orphan"
     )
 
 
@@ -153,5 +164,57 @@ class TransportSegment(Base):
         "Node",
         foreign_keys=[to_node],
         back_populates="incoming_segments"
+    )
+
+
+class PointNode(Base):
+    """
+       Physical access point connecting a TouristPoint to the transportation network.
+
+       A PointNode represents the "last-mile" location where a traveler transitions
+       from the transport network to the actual tourist destination.
+
+       Why this entity exists:
+       - TouristPoints are content-driven objects (stories, attractions, experiences)
+       - Nodes are abstract elements of the transport graph (cities, stations, airports)
+       - A TouristPoint is rarely located directly on a transport node
+
+       The PointNode acts as a bridge between them, answering questions like:
+       - Where exactly does a tourist arrive before reaching this destination?
+       - What transport node is the closest practical entry point?
+       - How difficult, long, or expensive is the final stretch?
+
+       A TouristPoint may have multiple PointNodes, allowing different access routes
+       (e.g., summer road vs winter route).
+
+       This model enables accurate routing, travel time estimation, and
+       realistic user guidance for the final segment of a journey.
+    """
+    __tablename__ = 'point_nodes'
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    # Foreign keys
+    tourist_point_id: Mapped[int] = mapped_column(
+        ForeignKey("tourist_points.id"),
+        nullable=False
+    )
+    node_id: Mapped[int] = mapped_column(
+        ForeignKey("nodes.id"),
+        nullable=False
+    )
+    # Last-mile metadata
+    distance_km: Mapped[float] = mapped_column(Float, nullable=True)
+    time_minutes: Mapped[int] = mapped_column(Integer, nullable=True)
+    access_type: Mapped[AccessType] = mapped_column(
+        SQLEnum(AccessType),
+        nullable=False,
+        doc="How the tourist reaches the point from the node (taxi, walk, shuttle)"
+    )
+    # Relationships
+    tourist_point: Mapped["TouristPoint"] = relationship(
+        back_populates="point_nodes"
+    )
+    node: Mapped["Node"] = relationship(
+        back_populates="point_nodes"
     )
 
