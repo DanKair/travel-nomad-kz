@@ -1,51 +1,54 @@
-from pydantic import BaseModel, Field, model_validator
-from slugify import slugify
-
-# Tourist Points
-
-class TouristPointBase(BaseModel):
-    name: str = Field(max_length=100)
-    short_description: str | None = None
-    long_description: str | None = None
-
-class TouristPoint(TouristPointBase):
-    id: int
-    region_id: int
-
-    class Config:
-        orm_mode = True
+from pydantic import BaseModel, Field
 
 # Regions
-class RegionBase(BaseModel):
+class RegionCreate(BaseModel):
     name: str = Field(max_length=50)
-
-
-class RegionCreate(RegionBase):
-    slug: str | None = None
-    tourist_points: list[TouristPoint] = []
-
     class Config:
         orm_mode = True
 
-    @model_validator(mode="before")
-    @classmethod
-    def generate_slug_from_name(cls, data: dict) -> dict:
-        """Generates a slug from the name field before Pydantic validation."""
-        if isinstance(data, dict) and "name" in data and not data.get("slug"):
-            data["slug"] = slugify(data["name"])
-        return data
 
-
-class Region(RegionBase):
+class RegionUpdate(BaseModel):
     '''
     This class represents a region used for API Responses, UPDATE operations particularly,
     cause it contains "id" field lol.
     Actually I need to improve this, but later on...
     '''
     id: int
-    slug: str
-    tourist_points: list[TouristPoint]
+    name: str | None = None
 
     class Config:
         orm_mode = True
 
+class RegionRead(BaseModel):
+    id: int
+    name: str
+    slug: str
+
+    class Config:
+        from_attributes = True
+
+# TouristPoint
+class TouristPointBase(BaseModel):
+    name: str = Field(max_length=100)
+    short_description: str | None = None
+    long_description: str | None = None
+    # There should be category selection ENUM
+    category_id: int
+
+class TouristPointCreate(TouristPointBase):
+    region_id: int
+
+
+class TouristPointRead(TouristPointBase):
+    id: int
+    region_id: int
+
+    class Config:
+        from_attributes = True
+
+
+class TouristPointUpdate(BaseModel):
+    name: str | None = None
+    short_description: str | None = None
+    long_description: str | None = None
+    category_id: int | None = None

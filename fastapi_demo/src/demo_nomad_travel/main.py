@@ -1,4 +1,4 @@
-import schemas, models
+import models, schemas
 from fastapi import FastAPI, Depends, HTTPException
 from contextlib import asynccontextmanager
 from sqlalchemy.orm import Session
@@ -17,7 +17,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # Regions Endpoints
-@app.get("/regions/", response_model=list[schemas.Region])
+@app.get("/regions/", response_model=list[schemas.RegionRead])
 def list_regions(db: Session = Depends(get_db)):
     regions = db.query(models.Region).all()
     return regions
@@ -35,7 +35,7 @@ def create_region(region: schemas.RegionCreate, db: Session = Depends(get_db)):
     return db_region
 """
 # Simpler CREATE Endpoint that requires only name field for "Region" model
-@app.post("/regions/create/", response_model=schemas.Region)
+@app.post("/regions/create/", response_model=schemas.RegionCreate)
 def create_region(region_name: str, db: Session = Depends(get_db)):
     region = models.Region(name=region_name)
     db.add(region)
@@ -43,14 +43,14 @@ def create_region(region_name: str, db: Session = Depends(get_db)):
     db.refresh(region)
     return region
 
-@app.get("/regions/{region_id}", response_model=schemas.Region)
+@app.get("/regions/{region_id}", response_model=schemas.RegionRead)
 def get_region(region_id: int, db: Session = Depends(get_db)):
     db_region = db.query(models.Region).filter(models.Region.id == region_id).first()
     if db_region is None:
         raise HTTPException(status_code=404, detail="Region not found")
     return db_region
 
-@app.patch("/regions/{region_id}", response_model=schemas.Region)
+@app.patch("/regions/{region_id}", response_model=schemas.RegionUpdate)
 def update_region(region_id: int, region_name: str, db: Session = Depends(get_db)):
     # 1. Find the region in the database by using "id" field
     target_region = db.query(models.Region).filter(models.Region.id == region_id).first()
@@ -67,7 +67,7 @@ def update_region(region_id: int, region_name: str, db: Session = Depends(get_db
     db.refresh(target_region)
     return target_region
 
-@app.delete("/regions/{region_id}", response_model=schemas.Region)
+@app.delete("/regions/{region_id}", response_model=schemas.RegionUpdate)
 def delete_region(region_id: int, db: Session = Depends(get_db)):
     target_region = db.query(models.Region).filter(models.Region.id == region_id).first()
     if target_region is None:
@@ -78,7 +78,7 @@ def delete_region(region_id: int, db: Session = Depends(get_db)):
     return f"{target_region.name} has been removed."
 
 # TouristPoint Endpoints
-@app.get("/tourist-points/", response_model=list[schemas.TouristPoint])
+@app.get("/tourist-points/", response_model=list[schemas.TouristPointRead])
 def list_tourist_points(db: Session = Depends(get_db)):
     tourist_points = db.query(models.TouristPoint).all()
     return tourist_points

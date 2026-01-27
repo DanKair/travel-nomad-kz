@@ -35,6 +35,10 @@ def generate_region_slug(mapper, connection, target):
     if not target.slug:
         target.slug = slugify(target.name)
 
+@event.listens_for(Region, "before_update")
+def region_before_update(mapper, connection, target: Region):
+    if target.name:
+        target.slug = slugify(target.name)
 
 
 class TouristPoint(Base):
