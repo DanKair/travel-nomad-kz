@@ -49,7 +49,7 @@ PointNode                 → Last-mile access from node to tourist point
 
 1. **Clone the repository**
    ```bash
-   cd fastapi-basic-projects
+   git clone https://github.com/DanKair/travel-nomad-kz.git
    ```
 
 2. **Create virtual environment** (optional but recommended)
