@@ -131,3 +131,25 @@ def update_tourist_point(
     db.commit()
     db.refresh(point)
     return point
+
+@router.delete("/{point_id}", response_model=str)
+def delete_tourist_point(
+    point_id: int,
+    db: Session = Depends(get_db)
+):
+    target_point = db.query(TouristPoint).filter(TouristPoint.id == point_id).first()
+    if not target_point:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Tourist point with id {point_id} not found"
+        )
+    db.delete(target_point)
+    db.commit()
+    return f"Tourist point: {target_point.name} was deleted"
+
+
+# Filtering
+@router.get("/region/{region_id}", response_model=List[TouristPointResponse])
+def get_tourist_points_by_region(region_id: int, db: Session = Depends(get_db)):
+    tourist_points = db.query(TouristPoint).filter(TouristPoint.region_id == region_id).all()
+    return tourist_points

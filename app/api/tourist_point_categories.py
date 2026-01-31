@@ -22,6 +22,7 @@ def get_tourist_point_category(category_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Category not found")
     return tourist_point_category
 
+# TODO: Make parent_id Optional Field (that's why I made parent_id == 0 logic)
 @router.post("/{category_id}", response_model=CategoryCreate)
 def create_category(category_name: str, parent_id: Optional[int], db: Session = Depends(get_db)):
     if parent_id == 0:
@@ -37,3 +38,12 @@ def create_category(category_name: str, parent_id: Optional[int], db: Session = 
     db.commit()
     db.refresh(new_category)
     return new_category
+
+@router.delete("/{category_id}", response_model=str)
+def delete_category(category_id: int, db: Session = Depends(get_db)):
+    target_category = db.query(TouristPointCategory).get(category_id)
+    if not target_category:
+        raise HTTPException(status_code=404, detail="Category not found")
+    db.delete(target_category)
+    db.commit()
+    return f"Category: '{target_category.name}' was deleted"
