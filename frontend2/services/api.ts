@@ -1,13 +1,104 @@
+/**
+ * API Service Layer - Enhanced Version
+ * 
+ * Fetches tourist_points_count dynamically from backend.
+ * Falls back to mock data only when backend is unavailable.
+ */
 
 import axios from 'axios';
-import { API_BASE_URL } from '../constants';
-import { Region, TouristPoint, RouteResponse, FilterType, TransportMode } from '../types';
+
+// API Base URL from environment variable
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+
+// Types (matching your backend)
+export interface Region {
+  id: number;
+  name: string;
+  description?: string;
+  tourist_points_count?: number; // Optional - calculated dynamically
+}
+
+export interface Category {
+  id: number;
+  name: string;
+  parent_id?: number;
+}
+
+export interface TouristPoint {
+  id: number;
+  name: string;
+  slug: string;
+  description?: string;
+  image_url?: string;
+  latitude: number;
+  longitude: number;
+  region_id: number;
+  category_id: number;
+  region: Region;
+  category: Category;
+}
+
+export enum TransportMode {
+  PLANE = 'PLANE',
+  TRAIN = 'TRAIN',
+  BUS = 'BUS',
+  TAXI = 'TAXI',
+  MARSHRUTKA = 'MARSHRUTKA'
+}
+
+export type AccessType = 'WALK' | 'TAXI' | 'BUS' | 'SHUTTLE';
+export type FilterType = 'fastest' | 'cheapest' | 'optimal';
+
+export interface RouteSegmentStep {
+  from_node_name: string;
+  from_node_lat: number;
+  from_node_lon: number;
+  to_node_name: string;
+  to_node_lat: number;
+  to_node_lon: number;
+  transport_mode: TransportMode;
+  distance_km: number;
+  time_minutes: number;
+  cost: number;
+  comfort_score: number;
+  co2_kg: number;
+}
+
+export interface LastMileAccess {
+  from_node_name: string;
+  from_node_lat: number;
+  from_node_lon: number;
+  to_point_lat: number;
+  to_point_lon: number;
+  access_type: AccessType;
+  distance_km: number;
+  time_minutes: number;
+  cost: number;
+  description?: string;
+}
+
+export interface RouteResponse {
+  from_node: string;
+  to_tourist_point: string;
+  total_distance_km: number;
+  total_time_minutes: number;
+  total_cost: number;
+  total_co2_kg: number;
+  average_comfort: number;
+  optimization_score: number;
+  route_steps: RouteSegmentStep[];
+  last_mile_access: LastMileAccess;
+}
+
+// ============================================================================
+// MOCK DATA (Fallback only)
+// ============================================================================
 
 const MOCK_REGIONS: Region[] = [
-  { id: 1, name: 'Almaty Region', description: 'Emerald lakes and high mountains.', tourist_points_count: 23 },
-  { id: 2, name: 'Turkestan Region', description: 'The spiritual heart of the Silk Road.', tourist_points_count: 15 },
-  { id: 3, name: 'Zhambyl Region', description: 'Ancient cities and historical mausoleums.', tourist_points_count: 12 },
-  { id: 4, name: 'Kyzylorda Region', description: 'Space gateways and the Aral Sea legacy.', tourist_points_count: 8 },
+  { id: 1, name: 'Almaty Region', description: 'Emerald lakes and high mountains.' },
+  { id: 2, name: 'Turkestan Region', description: 'The spiritual heart of the Silk Road.' },
+  { id: 3, name: 'Zhambyl Region', description: 'Ancient cities and historical mausoleums.' },
+  { id: 4, name: 'Kyzylorda Region', description: 'Space gateways and the Aral Sea legacy.' },
 ];
 
 const MOCK_POINTS: Record<number, TouristPoint[]> = {
@@ -16,7 +107,7 @@ const MOCK_POINTS: Record<number, TouristPoint[]> = {
       id: 101,
       name: 'Charyn Canyon',
       slug: 'charyn-canyon',
-      description: 'A stunning 154km canyon along the Charyn River, often called Kazakhstans Grand Canyon. Formed about 12 million years ago, it features unique "Castle Valley" formations.',
+      description: 'A stunning 154km canyon along the Charyn River, often called Kazakhstan\'s Grand Canyon.',
       image_url: 'https://images.unsplash.com/photo-1580501170888-806608a0d3be?auto=format&fit=crop&w=800&q=80',
       latitude: 43.3569,
       longitude: 79.0844,
@@ -29,7 +120,7 @@ const MOCK_POINTS: Record<number, TouristPoint[]> = {
       id: 102,
       name: 'Big Almaty Lake',
       slug: 'big-almaty-lake',
-      description: 'A natural alpine reservoir located at 2,511 meters above sea level in the Trans-Ili Alatau mountains. Known for its changing turquoise color depending on the season.',
+      description: 'A natural alpine reservoir located at 2,511 meters above sea level.',
       image_url: 'https://images.unsplash.com/photo-1548186105-0219602330a0?auto=format&fit=crop&w=800&q=80',
       latitude: 43.0506,
       longitude: 76.9850,
@@ -44,7 +135,7 @@ const MOCK_POINTS: Record<number, TouristPoint[]> = {
       id: 201,
       name: 'Mausoleum of Khoja Ahmed Yasawi',
       slug: 'yasawi-mausoleum',
-      description: 'An unfinished mausoleum in the city of Turkestan. Built in the 14th century, it is one of the best-preserved Timurid structures and a UNESCO World Heritage site.',
+      description: 'An unfinished mausoleum in Turkestan, UNESCO World Heritage site.',
       image_url: 'https://images.unsplash.com/photo-1628153097241-7669d0382343?auto=format&fit=crop&w=800&q=80',
       latitude: 43.2973,
       longitude: 68.2710,
@@ -56,22 +147,82 @@ const MOCK_POINTS: Record<number, TouristPoint[]> = {
   ]
 };
 
+// ============================================================================
+// HELPER: Calculate tourist_points_count dynamically
+// ============================================================================
+
+/**
+ * Enriches regions with dynamic tourist_points_count
+ * by fetching all tourist points and counting per region.
+ */
+async function enrichRegionsWithCounts(regions: Region[]): Promise<Region[]> {
+  try {
+    // Fetch all tourist points from API
+    const response = await axios.get(`${API_BASE_URL}/tourist-points`);
+    const allPoints: TouristPoint[] = response.data;
+    
+    // Count points per region
+    const countMap = new Map<number, number>();
+    allPoints.forEach(point => {
+      const current = countMap.get(point.region_id) || 0;
+      countMap.set(point.region_id, current + 1);
+    });
+    
+    // Add counts to regions
+    return regions.map(region => ({
+      ...region,
+      tourist_points_count: countMap.get(region.id) || 0
+    }));
+  } catch (error) {
+    console.warn('Failed to fetch tourist points for counting, using fallback');
+    
+    // Fallback: Calculate from mock data
+    const countMap = new Map<number, number>();
+    Object.values(MOCK_POINTS).flat().forEach(point => {
+      const current = countMap.get(point.region_id) || 0;
+      countMap.set(point.region_id, current + 1);
+    });
+    
+    return regions.map(region => ({
+      ...region,
+      tourist_points_count: countMap.get(region.id) || 0
+    }));
+  }
+}
+
+// ============================================================================
+// API METHODS
+// ============================================================================
+
 export const api = {
+  /**
+   * Get all regions with dynamic tourist_points_count
+   */
   getRegions: async (): Promise<Region[]> => {
     try {
+      // Fetch regions from backend
       const response = await axios.get(`${API_BASE_URL}/regions`);
-      return response.data;
-    } catch (err) {
-      return MOCK_REGIONS;
+      const regions: Region[] = response.data;
+      
+      // Enrich with dynamic counts
+      return await enrichRegionsWithCounts(regions);
+    } catch (error) {
+      console.error('Backend unavailable, using mock regions:', error);
+      return await enrichRegionsWithCounts(MOCK_REGIONS);
     }
   },
 
+  /**
+   * Get tourist points, optionally filtered by region
+   */
   getTouristPoints: async (regionId?: number): Promise<TouristPoint[]> => {
     try {
       const params = regionId ? { region_id: regionId } : {};
       const response = await axios.get(`${API_BASE_URL}/tourist-points`, { params });
       return response.data;
-    } catch (err) {
+    } catch (error) {
+      console.error('Backend unavailable, using mock points:', error);
+      
       if (regionId && MOCK_POINTS[regionId]) {
         return MOCK_POINTS[regionId];
       }
@@ -79,120 +230,94 @@ export const api = {
     }
   },
 
+  /**
+   * Get single tourist point by ID
+   */
   getTouristPoint: async (id: number): Promise<TouristPoint> => {
     try {
       const response = await axios.get(`${API_BASE_URL}/tourist-points/${id}`);
       return response.data;
-    } catch (err) {
+    } catch (error) {
+      console.error('Backend unavailable, using mock point:', error);
+      
       const allPoints = Object.values(MOCK_POINTS).flat();
       const point = allPoints.find(p => p.id === id);
+      
       if (point) return point;
-      throw err;
+      throw new Error(`Tourist point ${id} not found`);
     }
   },
 
+  /**
+   * Calculate optimal route
+   */
   calculateRoute: async (
     from: string,
     to: string,
     filter: FilterType
   ): Promise<RouteResponse> => {
     try {
+      // Build weight parameters based on filter
       const weights: Record<FilterType, any> = {
         fastest: { time_weight: 0.8, cost_weight: 0.1, comfort_weight: 0.05, co2_weight: 0.05 },
         cheapest: { time_weight: 0.1, cost_weight: 0.8, comfort_weight: 0.05, co2_weight: 0.05 },
         optimal: { time_weight: 0.4, cost_weight: 0.3, comfort_weight: 0.2, co2_weight: 0.1 }
       };
-      const response = await axios.get(`${API_BASE_URL}/routes`, { params: { from_node: from, to_tourist_point: to, ...weights[filter] } });
+      
+      // Call backend routing API
+      const response = await axios.get(`${API_BASE_URL}/routes`, {
+        params: {
+          from_node: from,
+          to_tourist_point: to,
+          ...weights[filter]
+        }
+      });
+      
       return response.data;
-    } catch (err) {
-      const allPoints = Object.values(MOCK_POINTS).flat();
-      const targetPoint = allPoints.find(p => p.slug === to) || allPoints[0];
-
-      // Logic: If destination is in Almaty Region (Region ID 1), build a direct road route
-      if (targetPoint.region_id === 1) {
-        return {
-          from_node: 'Almaty City Center',
-          to_tourist_point: to,
-          total_distance_km: 215,
-          total_time_minutes: 180,
-          total_cost: 8500,
-          total_co2_kg: 25,
-          average_comfort: 7.0,
-          optimization_score: 0.95,
-          route_steps: [
-            {
-              from_node_name: 'Almaty City Center', from_node_lat: 43.2566, from_node_lon: 76.9286,
-              to_node_name: `${targetPoint.name} Entrance Node`, to_node_lat: targetPoint.latitude - 0.02, to_node_lon: targetPoint.longitude - 0.02,
-              transport_mode: TransportMode.TAXI, distance_km: 210, time_minutes: 170, cost: 8000, comfort_score: 7, co2_kg: 24,
-            }
-          ],
-          last_mile_access: {
-            from_node_name: 'Park Entrance', from_node_lat: targetPoint.latitude - 0.02, from_node_lon: targetPoint.longitude - 0.02,
-            to_point_lat: targetPoint.latitude, to_point_lon: targetPoint.longitude,
-            access_type: 'WALK', distance_km: 5, time_minutes: 10, cost: 500, description: 'Final approach to the landmark.'
-          }
-        };
-      }
-
-      // Logic: If destination is in Turkestan Region (Region ID 2), use long-distance transport
-      if (filter === 'fastest') {
-        return {
-          from_node: 'Almaty City Center',
-          to_tourist_point: to,
-          total_distance_km: 885,
-          total_time_minutes: 145,
-          total_cost: 32500,
-          total_co2_kg: 120,
-          average_comfort: 8.5,
-          optimization_score: 0.942,
-          route_steps: [
-            {
-              from_node_name: 'Almaty City Center', from_node_lat: 43.2566, from_node_lon: 76.9286,
-              to_node_name: 'Almaty Airport (ALA)', to_node_lat: 43.3522, to_node_lon: 77.0405,
-              transport_mode: TransportMode.TAXI, distance_km: 18.5, time_minutes: 30, cost: 3500, comfort_score: 8, co2_kg: 5,
-            },
-            {
-              from_node_name: 'Almaty Airport (ALA)', from_node_lat: 43.3522, from_node_lon: 77.0405,
-              to_node_name: 'Turkestan Airport (HSA)', to_node_lat: 43.3072, to_node_lon: 68.2140,
-              transport_mode: TransportMode.PLANE, distance_km: 850, time_minutes: 85, cost: 28000, comfort_score: 9, co2_kg: 110,
-            }
-          ],
-          last_mile_access: {
-            from_node_name: 'Turkestan Airport', from_node_lat: 43.3072, from_node_lon: 68.2140,
-            to_point_lat: targetPoint.latitude, to_point_lon: targetPoint.longitude,
-            access_type: 'TAXI', distance_km: 12, time_minutes: 20, cost: 1500, description: 'Direct taxi to destination.'
-          }
-        };
-      }
-
-      // Default: Long distance Optimal path (Bus/Train)
+    } catch (error) {
+      console.error('Backend routing unavailable, using mock route:', error);
+      
+      // Mock route fallback (simplified version)
       return {
         from_node: 'Almaty City Center',
         to_tourist_point: to,
-        total_distance_km: 855,
-        total_time_minutes: 600,
-        total_cost: 12500,
-        total_co2_kg: 65,
-        average_comfort: 6.5,
-        optimization_score: 0.910,
+        total_distance_km: 215,
+        total_time_minutes: 180,
+        total_cost: 8500,
+        total_co2_kg: 25,
+        average_comfort: 7.0,
+        optimization_score: 0.95,
         route_steps: [
           {
-            from_node_name: 'Almaty City Center', from_node_lat: 43.2566, from_node_lon: 76.9286,
-            to_node_name: 'Sayran Bus Station', to_node_lat: 43.2389, to_node_lon: 76.8552,
-            transport_mode: TransportMode.TAXI, distance_km: 8.5, time_minutes: 20, cost: 1500, comfort_score: 8, co2_kg: 3,
-          },
-          {
-            from_node_name: 'Sayran Bus Station', from_node_lat: 43.2389, from_node_lon: 76.8552,
-            to_node_name: 'Turkestan Bus Station', to_node_lat: 43.3105, to_node_lon: 68.2450,
-            transport_mode: TransportMode.BUS, distance_km: 840, time_minutes: 540, cost: 6000, comfort_score: 5, co2_kg: 58,
+            from_node_name: 'Almaty City Center',
+            from_node_lat: 43.2566,
+            from_node_lon: 76.9286,
+            to_node_name: 'Destination Node',
+            to_node_lat: 43.3569,
+            to_node_lon: 79.0844,
+            transport_mode: TransportMode.TAXI,
+            distance_km: 210,
+            time_minutes: 170,
+            cost: 8000,
+            comfort_score: 7,
+            co2_kg: 24,
           }
         ],
         last_mile_access: {
-          from_node_name: 'Arrival Point', from_node_lat: 43.3105, from_node_lon: 68.2450,
-          to_point_lat: targetPoint.latitude, to_point_lon: targetPoint.longitude,
-          access_type: 'SHUTTLE', distance_km: 6.2, time_minutes: 25, cost: 500, description: 'Local shuttle service.'
+          from_node_name: 'Entrance',
+          from_node_lat: 43.3569,
+          from_node_lon: 79.0844,
+          to_point_lat: 43.3569,
+          to_point_lon: 79.0844,
+          access_type: 'WALK',
+          distance_km: 5,
+          time_minutes: 10,
+          cost: 500,
+          description: 'Final approach'
         }
       };
     }
   }
 };
+
+export default api;

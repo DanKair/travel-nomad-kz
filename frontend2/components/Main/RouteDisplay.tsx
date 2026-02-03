@@ -5,8 +5,17 @@ import L from 'leaflet';
 import { RouteResponse, RouteSegmentStep, FilterType, TransportMode, LastMileAccess } from '../../types';
 import { TRANSPORT_COLORS, ACCESS_COLORS } from '../../constants';
 import FilterToggles from './FilterToggles';
-import { getRouteGeometry } from '../../utils/geoUtils';
+import { getRouteGeometry, getBatchRouteGeometries } from '../../utils/geoUtils';
 import { Clock, Banknote, Map as MapIcon, Shield, Leaf, Info, Plane, Train, Bus, Navigation, MapPin } from 'lucide-react';
+// Fix Leaflet default marker icons
+import 'leaflet/dist/leaflet.css';
+
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+});
 
 const RouteUpdater: React.FC<{ segments: RouteSegmentStep[], lastMile?: LastMileAccess }> = ({ segments, lastMile }) => {
   const map = useMap();
@@ -55,24 +64,47 @@ const RouteDisplay: React.FC<RouteDisplayProps> = ({ route, onFilterChange, acti
   const [selectedSegment, setSelectedSegment] = useState<RouteSegmentStep | LastMileAccess | null>(null);
 
   useEffect(() => {
-    const fetchGeometries = async () => {
-      const updatedSteps = await Promise.all(route.route_steps.map(async (step) => {
-        const start: [number, number] = [step.from_node_lat!, step.from_node_lon!];
-        const end: [number, number] = [step.to_node_lat!, step.to_node_lon!];
-        const geo = await getRouteGeometry(start, end);
-        return { ...step, geometry: geo };
+  const fetchGeometries = async () => {
+    console.log('🔄 Fetching route geometries...');
+    
+    try {
+      // Prepare all segment pairs
+      const segmentPairs = route.route_steps.map(step => ({
+        from: [step.from_node_lat!, step.from_node_lon!] as [number, number],
+        to: [step.to_node_lat!, step.to_node_lon!] as [number, number]
       }));
-      setSegmentsWithGeo(updatedSteps);
 
+      // Fetch ALL in parallel (much faster!)
+      const geometries = await getBatchRouteGeometries(segmentPairs);
+      
+      const updatedSteps = route.route_steps.map((step, idx) => ({
+        ...step,
+        geometry: geometries[idx]
+      }));
+      
+      setSegmentsWithGeo(updatedSteps);
+      console.log('✅ All geometries loaded');
+
+      // Handle last mile
       if (route.last_mile_access) {
-        const start: [number, number] = [route.last_mile_access.from_node_lat!, route.last_mile_access.from_node_lon!];
-        const end: [number, number] = [route.last_mile_access.to_point_lat!, route.last_mile_access.to_point_lon!];
+        const start: [number, number] = [
+          route.last_mile_access.from_node_lat!, 
+          route.last_mile_access.from_node_lon!
+        ];
+        const end: [number, number] = [
+          route.last_mile_access.to_point_lat!, 
+          route.last_mile_access.to_point_lon!
+        ];
         const geo = await getRouteGeometry(start, end);
         setLastMileWithGeo({ ...route.last_mile_access, geometry: geo });
       }
-    };
-    fetchGeometries();
-  }, [route]);
+    } catch (error) {
+      console.error('❌ Failed to load geometries:', error);
+    }
+  };
+  
+  fetchGeometries();
+}, [route]);
 
   const isBackboneStep = (s: any): s is RouteSegmentStep => 'transport_mode' in s;
 

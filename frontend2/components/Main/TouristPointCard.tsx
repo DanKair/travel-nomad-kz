@@ -82,6 +82,7 @@ const TouristPointCard: React.FC<TouristPointCardProps> = ({ point, onClose, onB
               <Mountain className="w-5 h-5 text-blue-500" />
             </div>
             <div>
+              {/* TODO: Make Elevation field hidden if TouristPoint have null value or category_type != Mountain */}
               <div className="text-[10px] text-gray-400 font-bold uppercase">Elevation</div>
               <div className="text-sm font-semibold text-gray-700">850m</div>
             </div>
