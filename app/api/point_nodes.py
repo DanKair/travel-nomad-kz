@@ -1,0 +1,88 @@
+"""
+Point Nodes API - CRUD endpoints for last-mile access management
+
+PointNode connects TouristPoints to Nodes (last-mile access).
+This API allows you to configure how tourists reach destinations from transportation nodes.
+"""
+
+from typing import List
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.models import PointNode
+from app.schemas import PointNodeResponse, PointNodeCreate
+
+router = APIRouter(prefix="/point-nodes", tags=["Point Nodes (Last-Mile Access)"])
+
+@router.get("", response_model=List[PointNodeResponse])
+def get_point_nodes(
+    tourist_point_id: int | None = None,
+    node_id: int | None = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Get all point nodes (last-mile access configurations).
+    
+    Optional filters:
+    - tourist_point_id: Filter by specific tourist point
+    - node_id: Filter by specific node
+    """
+    query = db.query(PointNode)
+    
+    if tourist_point_id:
+        query = query.filter(PointNode.tourist_point_id == tourist_point_id)
+    if node_id:
+        query = query.filter(PointNode.node_id == node_id)
+    
+    return query.all()
+
+@router.get("/{point_node_id}", response_model=PointNodeResponse)
+def get_point_node(point_node_id: int, db: Session = Depends(get_db)):
+    """Get a specific point node by ID."""
+    point_node = db.query(PointNode).filter(PointNode.id == point_node_id).first()
+    if not point_node:
+        raise HTTPException(status_code=404, detail="Point node not found")
+    return point_node
+
+@router.post("", response_model=PointNodeResponse, status_code=201)
+def create_point_node(point_node_data: PointNodeCreate, db: Session = Depends(get_db)):
+    """
+    Create a new point node (last-mile access).
+    
+    This defines how to reach a tourist point from a transportation node.
+    Example: "From Turkestan city → Taxi 2.3km → Mausoleum"
+    """
+    new_point_node = PointNode(**point_node_data.model_dump())
+    db.add(new_point_node)
+    db.commit()
+    db.refresh(new_point_node)
+    return new_point_node
+
+@router.put("/{point_node_id}", response_model=PointNodeResponse)
+def update_point_node(point_node_id: int, point_node_data: PointNodeCreate, db: Session = Depends(get_db)):
+    """Update an existing point node."""
+    point_node = db.query(PointNode).filter(PointNode.id == point_node_id).first()
+    if not point_node:
+        raise HTTPException(status_code=404, detail="Point node not found")
+    
+    # Update all fields (PointNodeCreate is used for both create and update)
+    update_data = point_node_data.model_dump()
+    for field, value in update_data.items():
+        setattr(point_node, field, value)
+    
+    db.commit()
+    db.refresh(point_node)
+    return point_node
+
+@router.delete("/{point_node_id}", status_code=204)
+def delete_point_node(point_node_id: int, db: Session = Depends(get_db)):
+    """Delete a point node."""
+    point_node = db.query(PointNode).filter(PointNode.id == point_node_id).first()
+    if not point_node:
+        raise HTTPException(status_code=404, detail="Point node not found")
+    
+    db.delete(point_node)
+    db.commit()
+    return None
