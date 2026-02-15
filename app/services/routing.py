@@ -569,7 +569,11 @@ class RoutingService:
             route_steps.append(
                 RouteSegmentStep(
                     from_node_name=segment.from_node.name,
+                    from_node_lat=segment.from_node.latitude,
+                    from_node_lon=segment.from_node.longitude,
                     to_node_name=segment.to_node.name,
+                    to_node_lat=segment.to_node.latitude,
+                    to_node_lon=segment.to_node.longitude,
                     transport_mode=segment.transport_mode,
                     distance_km=segment.distance_km,
                     time_minutes=segment.time_minutes,
@@ -582,6 +586,10 @@ class RoutingService:
         # Build last-mile access info
         last_mile = LastMileAccess(
             from_node_name=point_node.node.name,
+            from_node_lat=point_node.node.latitude,
+            from_node_lon=point_node.node.longitude,
+            to_point_lat=point_node.tourist_point.latitude,
+            to_point_lon=point_node.tourist_point.longitude,
             access_type=point_node.access_type,
             distance_km=point_node.distance_km,
             time_minutes=point_node.time_minutes,

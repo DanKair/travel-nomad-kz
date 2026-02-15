@@ -14,6 +14,12 @@ This includes:
 Run this after database initialization to get a working demo.
 """
 
+import sys
+from pathlib import Path
+
+# Add parent directory to Python path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from app.database import SessionLocal, init_db
 from app.models import (
     Region,
@@ -45,18 +51,30 @@ def seed_database():
         print("📍 Creating regions...")
         
         almaty_region = Region(
-            name="Almaty Region",
+            name="Алматинская Область",
             description="Largest region in Kazakhstan, home to Almaty city and stunning natural attractions"
         )
         
         turkestan_region = Region(
-            name="Turkestan Region",
+            name="Туркестанская Область",
             description="Historical region with ancient cities and cultural heritage sites"
         )
+
+        zhambyl_region = Region(
+            name="Жамбылская Область",
+            description="Historical region with ancient cities and cultural heritage sites"
+        )
+
+        kyzylorda_region = Region(
+            name="Кызылординская Область",
+            description="Historical region with ancient cities and cultural heritage sites"
+        )
+
         
-        db.add_all([almaty_region, turkestan_region])
+        
+        db.add_all([almaty_region, turkestan_region, zhambyl_region, kyzylorda_region])
         db.commit()
-        print(f"   ✓ Created {len([almaty_region, turkestan_region])} regions")
+        print(f"   ✓ Created 4 regions")
         
         # =====================================================================
         # 2. CREATE TOURIST POINT CATEGORIES
@@ -64,20 +82,25 @@ def seed_database():
         print("🏷️  Creating categories...")
         
         # Top-level categories
-        nature_category = TouristPointCategory(name="Nature", parent_id=None)
-        culture_category = TouristPointCategory(name="Culture & History", parent_id=None)
+        nature_category = TouristPointCategory(name="Природа", parent_id=None)
+        culture_category = TouristPointCategory(name="Культура & История", parent_id=None)
         
         db.add_all([nature_category, culture_category])
         db.commit()
         
         # Sub-categories
-        canyon_category = TouristPointCategory(name="Canyon", parent_id=nature_category.id)
-        reserve_category = TouristPointCategory(name="Nature Reserve", parent_id=nature_category.id)
-        monument_category = TouristPointCategory(name="Historical Monument", parent_id=culture_category.id)
+        canyon_category = TouristPointCategory(name="Каньон", parent_id=nature_category.id)
+        reserve_category = TouristPointCategory(name="Заповедник", parent_id=nature_category.id)
+        lake_category = TouristPointCategory(name="Озеро", parent_id=nature_category.id)
+        park_category = TouristPointCategory(name="Парк", parent_id=nature_category.id)
+        waterfall_category = TouristPointCategory(name="Водопад", parent_id=nature_category.id)
+        museum_category = TouristPointCategory(name="Музей", parent_id=culture_category.id)
+        monument_category = TouristPointCategory(name="Исторический памятник", parent_id=culture_category.id)
+        sacred_category = TouristPointCategory(name="Священное место", parent_id=culture_category.id)
         
-        db.add_all([canyon_category, reserve_category, monument_category])
+        db.add_all([canyon_category, lake_category, park_category, waterfall_category, museum_category, monument_category, reserve_category, sacred_category])
         db.commit()
-        print(f"   ✓ Created 5 categories (2 parent, 3 child)")
+        print(f"   ✓ Created 7 categories (2 parent, 5 child)")
         
         # =====================================================================
         # 3. CREATE NODES (Transportation locations)
@@ -88,8 +111,8 @@ def seed_database():
         almaty_city = Node(
             name="Almaty",
             slug="almaty",
-            latitude=43.2220,
-            longitude=76.8512,
+            latitude=43.233503,
+            longitude=76.921767,
             node_type=NodeType.CITY
         )
         
@@ -225,35 +248,57 @@ def seed_database():
             name="Charyn Canyon",
             slug="charyn-canyon",
             description="Breathtaking canyon with unique rock formations, often called Kazakhstan's Grand Canyon. The canyon stretches for 154 kilometers along the Charyn River gorge in northern Tian Shan. Wind and water erosion have created spectacular rock formations including the famous Valley of Castles.",
-            image_url="https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=800",
+            image_url="https://i.natgeofe.com/n/65b5d84b-c44e-41d0-8ee9-5295e1e6eba5/silkroad_shutterstock_1236828025_HR.jpg",
             latitude=43.3500,
             longitude=79.0833,
             region_id=almaty_region.id,
-            category_id=canyon_category.id
+            category_id=canyon_category.id,
+            elevation_m=850,
+            best_season="Apr - Oct",
+            accessibility="Open Daily, 4WD Recommended"
+        )
+
+        # Kolsai Lake
+        kolsai_lake = TouristPoint(
+            name="Кольсайские Озера",
+            slug="kolsai-lake",
+            description="Одно из самых потрясающих природных чудес Казахстана, расположенное в самом сердце Тянь-Шаня. Озеро окружено высокими вершинами и открывает захватывающие виды на окружающий ландшафт. Это популярное место для пеших прогулок, пикников и наблюдения за дикой природой.",
+            image_url="https://img1.wsimg.com/isteam/ip/54df45e4-dabc-47fa-93b4-6fad1ac0fd0f/E6A7CDFF-427E-499F-B530-9CD07318FD1E.jpeg",
+            latitude=42.98443,
+            longitude=78.32479,
+            region_id=almaty_region.id,
+            category_id=lake_category.id,
+            best_season="May - September",
         )
         
         # Mausoleum of Khoja Ahmed Yasawi
         mausoleum_yasawi = TouristPoint(
-            name="Mausoleum of Khoja Ahmed Yasawi",
+            name="Мавзолей Хожаи Ахмед Ясави",
             slug="mausoleum-yasawi",
-            description="UNESCO World Heritage Site, masterpiece of medieval architecture built by Timur (Tamerlane) in the late 14th century. The mausoleum features a stunning turquoise dome and represents the finest example of Timurid architecture. It was one of the most important pilgrimage sites for Central Asian Muslims.",
-            image_url="https://images.unsplash.com/photo-1588239034647-25783cbfb8b1?w=800",
+            description="Мавзолей Хожаи Ахмед Ясави - это исторический памятник, расположенный в городе Туракстан, Казахстане. Это место имеет большое культурное значение и является одним из самых популярных туристических объектов региона.",
+            image_url="https://ticketon.kz/files/media/mavzoley_hodzhi_ahmeda_yasavi_4.jpg",
             latitude=43.2967,
             longitude=68.2608,
             region_id=turkestan_region.id,
-            category_id=monument_category.id
+            category_id=monument_category.id,
+            elevation_m=160,
+            best_season="Year-round",
+            accessibility="Open Daily (UNESCO Site)"
         )
         
         # Aksu-Zhabagly Nature Reserve
         aksu_zhabagly = TouristPoint(
-            name="Aksu-Zhabagly Nature Reserve",
+            name="Аксу-Жабаглы",
             slug="aksu-zhabagly",
-            description="Oldest nature reserve in Central Asia with diverse flora and fauna, established in 1926. Home to over 1,300 plant species, 267 bird species, and rare animals like snow leopards and bears. The reserve spans mountain ranges from 1,200 to 4,280 meters elevation.",
+            description="Аксу-Жабаглы - это национальный парк, расположенный в Казахстане. Это место имеет большое культурное значение и является одним из самых популярных туристических объектов региона.",
             image_url="https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=800",
             latitude=42.5167,
             longitude=70.5333,
             region_id=turkestan_region.id,
-            category_id=reserve_category.id
+            category_id=reserve_category.id,
+            elevation_m=2700,
+            best_season="May - Sep",
+            accessibility="Permit Required"
         )
         
         db.add_all([charyn_canyon, mausoleum_yasawi, aksu_zhabagly])
