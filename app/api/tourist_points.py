@@ -96,8 +96,46 @@ def create_tourist_point(point_data: TouristPointCreate, db: Session = Depends(g
     db.refresh(point)
     return point
 
-
 @router.patch("/{point_id}", response_model=TouristPointResponse)
+def partial_update_tourist_point(
+    point_id: int,
+    point_name: Optional[str] | None = None,
+    point_slug: Optional[str] | None = None,
+    description: Optional[str] | None = None,
+    image_url: Optional[str] | None = None,
+    lat: Optional[float] | None = None,
+    lon: Optional[float] | None = None,
+    best_season: Optional[str] | None = None,
+    accessibility: Optional[str] | None = None,
+    db: Session = Depends(get_db)
+):
+    target_point = db.query(TouristPoint).filter(TouristPoint.id == point_id).first()
+    if not target_point:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    if point_slug:
+        target_point.slug = point_slug
+    elif point_name:
+        target_point.name = point_name
+    elif description:
+        target_point.description = description
+    elif image_url:
+        target_point.image_url = image_url
+    elif lat:
+        target_point.latitude = lat
+    elif lon:
+        target_point.longitude = lon
+    elif best_season:
+        target_point.best_season = best_season
+    elif accessibility:
+        target_point.accessibility = accessibility
+    db.commit()
+    db.refresh(target_point)
+    return target_point
+
+
+@router.put("/{point_id}", response_model=TouristPointResponse)
 def update_tourist_point(
     point_id: int,
     point_data: TouristPointUpdate,
