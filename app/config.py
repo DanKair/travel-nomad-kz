@@ -4,7 +4,10 @@ Uses Pydantic Settings for environment-based configuration.
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
 
 class Settings(BaseSettings):
     """
@@ -15,10 +18,14 @@ class Settings(BaseSettings):
     """
     
     # Database configuration
-    database_url: str = "sqlite:///./kazakhstan_routes.db"
+    POSTGRES_USER: str = os.getenv("POSTGRES_USER", "postgres")
+    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "password")
+    POSTGRES_SERVER: str = os.getenv("POSTGRES_SERVER", "localhost")
+    POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
+    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "nomad_travel_db")
     
     # Application settings
-    app_name: str = "Kazakhstan Tourism Routing API"
+    app_name: str = "Nomad Travel API"
     app_version: str = "1.0.0"
     debug: bool = True
     
@@ -34,6 +41,11 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False
     )
+
+    @property
+    def DATABASE_URL(self) -> str:
+        # SQLAlchemy 1.4+ uses postgresql+psycopg2:// instead of postgres://
+        return f"postgresql+psycopg2://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
 
 # Global settings instance

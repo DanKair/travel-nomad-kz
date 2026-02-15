@@ -100,10 +100,22 @@ class TransportSegmentBase(BaseModel):
     comfort_score: float = Field(5.0, ge=1, le=10, description="Comfort rating (1-10)")
     co2_kg: float = Field(0.0, ge=0, description="CO2 emissions in kg")
 
-
 class TransportSegmentCreate(TransportSegmentBase):
     """Schema for creating a new transport segment."""
     pass
+
+
+class TransportSegmentUpdate(BaseModel):
+    from_node_id: Optional[int] = None
+    to_node_id: Optional[int] = None
+    transport_mode: Optional[TransportMode] = None
+
+    distance_km: Optional[float] = Field(None, gt=0)
+    time_minutes: Optional[int] = Field(None, gt=0)
+    cost: Optional[float] = Field(None, ge=0)
+
+    comfort_score: Optional[float] = Field(None, ge=1, le=10)
+    co2_kg: Optional[float] = Field(None, ge=0)
 
 
 class TransportSegmentResponse(TransportSegmentBase):
@@ -120,6 +132,7 @@ class TransportSegmentResponse(TransportSegmentBase):
 class TouristPointBase(BaseModel):
     """Base schema with common tourist point fields."""
     name: str = Field(..., max_length=200, description="Tourist point name")
+    # TODO: Make it Optional Field for slug Auto-generation
     slug: str = Field(..., max_length=200, description="URL-friendly identifier")
     description: Optional[str] = Field(None, description="Detailed description")
     image_url: Optional[str] = Field(None, max_length=500, description="Image URL")
@@ -127,6 +140,12 @@ class TouristPointBase(BaseModel):
     longitude: float = Field(..., ge=-180, le=180, description="Longitude coordinate")
     region_id: int = Field(..., description="Region ID")
     category_id: int = Field(..., description="Category ID")
+    
+    # Optional metadata fields
+    elevation_m: Optional[int] = Field(None, description="Elevation in meters")
+    best_season: Optional[str] = Field(None, max_length=100, description="Best visiting season")
+    accessibility: Optional[str] = Field(None, max_length=200, description="Accessibility information")
+
 
 
 class TouristPointCreate(TouristPointBase):
@@ -143,6 +162,12 @@ class TouristPointUpdate(BaseModel):
     longitude: Optional[float] = Field(None, ge=-180, le=180)
     region_id: Optional[int] = None
     category_id: Optional[int] = None
+    
+    # Optional metadata fields
+    elevation_m: Optional[int] = None
+    best_season: Optional[str] = Field(None, max_length=100)
+    accessibility: Optional[str] = Field(None, max_length=200)
+
 
 
 class TouristPointResponse(TouristPointBase):
@@ -211,7 +236,11 @@ class RouteSegmentStep(BaseModel):
     Represents traveling from one node to another using a specific transport mode.
     """
     from_node_name: str
+    from_node_lat: Optional[float] = None
+    from_node_lon: Optional[float] = None
     to_node_name: str
+    to_node_lat: Optional[float] = None
+    to_node_lon: Optional[float] = None
     transport_mode: TransportMode
     distance_km: float
     time_minutes: int
@@ -227,6 +256,10 @@ class LastMileAccess(BaseModel):
     This is appended AFTER the main route calculation.
     """
     from_node_name: str
+    from_node_lat: Optional[float] = None
+    from_node_lon: Optional[float] = None
+    to_point_lat: Optional[float] = None
+    to_point_lon: Optional[float] = None
     access_type: AccessType
     distance_km: float
     time_minutes: int

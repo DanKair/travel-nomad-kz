@@ -10,7 +10,7 @@ All models use SQLAlchemy 2.x Mapped types for type safety.
 """
 
 from typing import List, Optional
-from sqlalchemy import String, Float, Integer, ForeignKey, Text, Enum as SQLEnum
+from sqlalchemy import String, Float, Integer, ForeignKey, Text, Enum as SQLEnum, event
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 from app.enums import TransportMode, NodeType, AccessType
@@ -142,6 +142,18 @@ class Node(Base):
     def __repr__(self) -> str:
         return f"<Node(id={self.id}, name='{self.name}', type={self.node_type})>"
 
+# Slug Auto-Generation for Node Model
+"""
+@event.listens_for(Node, "before_insert")
+def generate_node_slug(mapper, connection, target: Node):
+    if not target.slug:
+        target.slug = slugify(target.name)
+
+@event.listens_for(Node, "before_update")
+def node_before_update(mapper, connection, target: Node):
+    if target.name:
+        target.slug = slugify(target.name)
+"""
 
 class TransportSegment(Base):
     """
@@ -243,6 +255,12 @@ class TouristPoint(Base):
     latitude: Mapped[float] = mapped_column(Float, nullable=False)
     longitude: Mapped[float] = mapped_column(Float, nullable=False)
     
+    # Optional metadata fields for enhanced UI display
+    elevation_m: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # Elevation in meters
+    best_season: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # e.g., "Apr - Oct"
+    accessibility: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  # e.g., "Open Daily", "Permit Required"
+
+    
     # Foreign keys
     region_id: Mapped[int] = mapped_column(
         ForeignKey("regions.id"),
@@ -270,6 +288,17 @@ class TouristPoint(Base):
     
     def __repr__(self) -> str:
         return f"<TouristPoint(id={self.id}, name='{self.name}')>"
+
+# Slug Auto-Generation for TouristPoint Model
+"""@event.listens_for(TouristPoint, "before_insert")
+def generate_tourist_point_slug(mapper, connection, target):
+    if not target.slug:
+        target.slug = slugify(target.name)
+
+@event.listens_for(TouristPoint, "before_update")
+def tourist_point_before_update(mapper, connection, target: TouristPoint):
+    if target.name:
+        target.slug = slugify(target.name)"""
 
 
 class PointNode(Base):

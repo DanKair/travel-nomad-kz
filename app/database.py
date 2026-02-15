@@ -18,8 +18,8 @@ from app.config import settings
 # For SQLite: check_same_thread=False allows FastAPI to use the same connection across threads
 # For production PostgreSQL, you'd use a connection pool instead
 engine = create_engine(
-    settings.database_url,
-    connect_args={"check_same_thread": False} if "sqlite" in settings.database_url else {},
+    settings.DATABASE_URL,
+    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {},
     echo=settings.debug  # Log SQL queries in debug mode
 )
 

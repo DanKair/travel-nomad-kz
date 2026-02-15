@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import init_db
-from app.api import regions, tourist_points, routing, tourist_point_categories
+from app.api import regions, tourist_points, routing, tourist_point_categories, point_nodes, transport_segments, nodes
 
 
 @asynccontextmanager
@@ -44,6 +44,8 @@ app = FastAPI(
     * **Regions**: Manage administrative regions
     * **Tourist Points**: Manage tourist destinations with filtering
     * **Routing**: Calculate optimal routes using multi-criteria Dijkstra algorithm
+    * **Transport Segments**: CRUD operations for transport network management
+    * **Point Nodes**: CRUD operations for last-mile access configuration
     
     ## Routing Algorithm
     
@@ -79,6 +81,10 @@ app.include_router(regions.router)
 app.include_router(tourist_points.router)
 app.include_router(tourist_point_categories.router)
 app.include_router(routing.router)
+app.include_router(nodes.router)
+app.include_router(transport_segments.router)
+app.include_router(point_nodes.router)
+
 
 
 @app.get("/", tags=["Root"])
