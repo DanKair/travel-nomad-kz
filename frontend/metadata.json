@@ -1,0 +1,7 @@
+{
+  "name": "NomadTravelKZ Frontend",
+  "description": "A multi-criteria route optimization dashboard for exploring the tourist treasures of Southern Kazakhstan, featuring interactive maps and detailed transport analytics.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
