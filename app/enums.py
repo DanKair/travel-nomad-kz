@@ -32,10 +32,13 @@ class NodeType(str, Enum):
     
     Nodes are physical locations where you can board/exit transportation.
     """
-    CITY = "city"              # General city/town
-    AIRPORT = "airport"        # Airport (for plane transport)
-    STATION = "station"        # Railway station (for train transport)
-    BUS_STOP = "bus_stop"      # Bus terminal/stop
+    CITY = "city"                          # General city/town
+    VILLAGE = "village"
+    AIRPORT = "airport"                    # Airport (for plane transport)
+    TRAIN_STATION = "train_station"        # Railway station (for train transport)
+    BUS_STATION = "bus_station"            # Bus station
+    BUS_STOP = "bus_stop"                  # Bus terminal/stop
+    TRANSPORT_STOP = "transport_stop"      # General Car / Taxi stops
 
 
 class AccessType(str, Enum):

@@ -78,6 +78,13 @@ class NodeCreate(NodeBase):
     pass
 
 
+class NodeUpdate(BaseModel):
+    """Schema for updating a node (all fields optional)."""
+    name: Optional[str] = Field(None, max_length=100, description="Node name")
+    latitude: Optional[float] = Field(None, ge=-90, le=90)
+    longitude: Optional[float] = Field(None, ge=-180, le=180)
+
+
 class NodeResponse(NodeBase):
     """Schema for node response."""
     id: int
