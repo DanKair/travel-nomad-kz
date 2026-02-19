@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { FilterType } from '../../types';
-import { Zap, Banknote, Scale, Loader2 } from 'lucide-react';
+import { Zap, Banknote, Scale, Shield, Leaf, Loader2 } from 'lucide-react';
 
 interface FilterTogglesProps {
   onFilterChange: (filter: FilterType) => void;
@@ -14,6 +14,8 @@ const FilterToggles: React.FC<FilterTogglesProps> = ({ onFilterChange, activeFil
     { id: 'fastest', label: 'Fastest', icon: <Zap className="w-4 h-4" />, color: 'bg-orange-500' },
     { id: 'cheapest', label: 'Cheapest', icon: <Banknote className="w-4 h-4" />, color: 'bg-green-500' },
     { id: 'optimal', label: 'Optimal', icon: <Scale className="w-4 h-4" />, color: 'bg-blue-500' },
+    { id: 'comfort', label: 'Comfort', icon: <Shield className="w-4 h-4" />, color: 'bg-purple-500' },
+    { id: 'eco', label: 'Eco', icon: <Leaf className="w-4 h-4" />, color: 'bg-emerald-600' },
   ];
 
   return (
@@ -23,11 +25,10 @@ const FilterToggles: React.FC<FilterTogglesProps> = ({ onFilterChange, activeFil
           key={option.id}
           onClick={() => onFilterChange(option.id)}
           disabled={isLoading}
-          className={`flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 ${
-            activeFilter === option.id 
-              ? 'bg-white shadow-sm border border-gray-100' 
+          className={`flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 ${activeFilter === option.id
+              ? 'bg-white shadow-sm border border-gray-100'
               : 'hover:bg-white/50 text-gray-500'
-          }`}
+            }`}
         >
           <div className="flex items-center gap-3">
             <div className={`p-1.5 rounded-lg text-white ${activeFilter === option.id ? option.color : 'bg-gray-300'}`}>

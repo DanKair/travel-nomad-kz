@@ -83,4 +83,4 @@ export interface RouteResponse {
   optimization_score: number;
 }
 
-export type FilterType = 'fastest' | 'cheapest' | 'optimal';
+export type FilterType = 'fastest' | 'cheapest' | 'optimal' | 'comfort' | 'eco';

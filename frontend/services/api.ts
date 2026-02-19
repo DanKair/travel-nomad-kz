@@ -47,7 +47,7 @@ export enum TransportMode {
 }
 
 export type AccessType = 'WALK' | 'TAXI' | 'BUS' | 'SHUTTLE';
-export type FilterType = 'fastest' | 'cheapest' | 'optimal';
+export type FilterType = 'fastest' | 'cheapest' | 'optimal' | 'comfort' | 'eco';
 
 export interface RouteSegmentStep {
   from_node_name: string;
@@ -160,14 +160,14 @@ async function enrichRegionsWithCounts(regions: Region[]): Promise<Region[]> {
     // Fetch all tourist points from API
     const response = await axios.get(`${API_BASE_URL}/tourist-points`);
     const allPoints: TouristPoint[] = response.data;
-    
+
     // Count points per region
     const countMap = new Map<number, number>();
     allPoints.forEach(point => {
       const current = countMap.get(point.region_id) || 0;
       countMap.set(point.region_id, current + 1);
     });
-    
+
     // Add counts to regions
     return regions.map(region => ({
       ...region,
@@ -175,14 +175,14 @@ async function enrichRegionsWithCounts(regions: Region[]): Promise<Region[]> {
     }));
   } catch (error) {
     console.warn('Failed to fetch tourist points for counting, using fallback');
-    
+
     // Fallback: Calculate from mock data
     const countMap = new Map<number, number>();
     Object.values(MOCK_POINTS).flat().forEach(point => {
       const current = countMap.get(point.region_id) || 0;
       countMap.set(point.region_id, current + 1);
     });
-    
+
     return regions.map(region => ({
       ...region,
       tourist_points_count: countMap.get(region.id) || 0
@@ -203,7 +203,7 @@ export const api = {
       // Fetch regions from backend
       const response = await axios.get(`${API_BASE_URL}/regions`);
       const regions: Region[] = response.data;
-      
+
       // Enrich with dynamic counts
       return await enrichRegionsWithCounts(regions);
     } catch (error) {
@@ -222,7 +222,7 @@ export const api = {
       return response.data;
     } catch (error) {
       console.error('Backend unavailable, using mock points:', error);
-      
+
       if (regionId && MOCK_POINTS[regionId]) {
         return MOCK_POINTS[regionId];
       }
@@ -239,10 +239,10 @@ export const api = {
       return response.data;
     } catch (error) {
       console.error('Backend unavailable, using mock point:', error);
-      
+
       const allPoints = Object.values(MOCK_POINTS).flat();
       const point = allPoints.find(p => p.id === id);
-      
+
       if (point) return point;
       throw new Error(`Tourist point ${id} not found`);
     }
@@ -261,9 +261,11 @@ export const api = {
       const weights: Record<FilterType, any> = {
         fastest: { time_weight: 0.8, cost_weight: 0.1, comfort_weight: 0.05, co2_weight: 0.05 },
         cheapest: { time_weight: 0.1, cost_weight: 0.8, comfort_weight: 0.05, co2_weight: 0.05 },
-        optimal: { time_weight: 0.4, cost_weight: 0.3, comfort_weight: 0.2, co2_weight: 0.1 }
+        optimal: { time_weight: 0.4, cost_weight: 0.3, comfort_weight: 0.2, co2_weight: 0.1 },
+        comfort: { time_weight: 0.15, cost_weight: 0.1, comfort_weight: 0.7, co2_weight: 0.05 },
+        eco: { time_weight: 0.1, cost_weight: 0.1, comfort_weight: 0.1, co2_weight: 0.7 },
       };
-      
+
       // Call backend routing API
       const response = await axios.get(`${API_BASE_URL}/routes`, {
         params: {
@@ -272,22 +274,22 @@ export const api = {
           ...weights[filter]
         }
       });
-      
+
       return response.data;
-    } 
+    }
     catch (err: any) {
-    // ✅ NEW: Throw proper errors instead
-    console.error('❌ Route failed:', err.response?.data || err.message);
-    
-    if (err.response?.status === 404 || err.response?.status === 400) {
-      throw new Error(`Route not found: ${err.response?.data?.detail || 'No valid route exists'}`);
-    }
-    
-    if (!err.response) {
-      throw new Error('Cannot connect to backend. Is it running on port 8000?');
-    }
-    
-    throw new Error(`Failed to calculate route: ${err.message}`);
+      // ✅ NEW: Throw proper errors instead
+      console.error('❌ Route failed:', err.response?.data || err.message);
+
+      if (err.response?.status === 404 || err.response?.status === 400) {
+        throw new Error(`Route not found: ${err.response?.data?.detail || 'No valid route exists'}`);
+      }
+
+      if (!err.response) {
+        throw new Error('Cannot connect to backend. Is it running on port 8000?');
+      }
+
+      throw new Error(`Failed to calculate route: ${err.message}`);
     }
   }
 };
