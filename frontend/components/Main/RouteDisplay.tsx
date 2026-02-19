@@ -178,20 +178,32 @@ const RouteDisplay: React.FC<RouteDisplayProps> = ({ route, onFilterChange, acti
           );
         })}
 
-        {/* JOURNEY ORIGIN: ALMATY CITY CENTER */}
-        {segmentsWithGeo.length > 0 && (
-          <Marker
-            position={[segmentsWithGeo[0].from_node_lat!, segmentsWithGeo[0].from_node_lon!]}
-            icon={L.divIcon({
-              className: 'origin-marker',
-              html: `<div style="background-color: #3b82f6; border: 3px solid white; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(59, 130, 246, 0.4);"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>`,
-              iconSize: [36, 36],
-              iconAnchor: [18, 18]
-            })}
-          >
-            <Popup className="font-bold">Start: Almaty City Center</Popup>
-          </Marker>
-        )}
+        {/* JOURNEY ORIGIN — falls back to last-mile start when no backbone segments */}
+        {(segmentsWithGeo.length > 0 || lastMileWithGeo) && (() => {
+          // Prefer the first backbone segment's origin; fall back to last-mile node coords
+          const lat = segmentsWithGeo.length > 0
+            ? segmentsWithGeo[0].from_node_lat!
+            : lastMileWithGeo!.from_node_lat!;
+          const lon = segmentsWithGeo.length > 0
+            ? segmentsWithGeo[0].from_node_lon!
+            : lastMileWithGeo!.from_node_lon!;
+          const label = segmentsWithGeo.length > 0
+            ? `Start: ${segmentsWithGeo[0].from_node_name}`
+            : `Start: ${lastMileWithGeo!.from_node_name}`;
+          return (
+            <Marker
+              position={[lat, lon]}
+              icon={L.divIcon({
+                className: 'origin-marker',
+                html: `<div style="background-color: #3b82f6; border: 3px solid white; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(59, 130, 246, 0.4);"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>`,
+                iconSize: [36, 36],
+                iconAnchor: [18, 18]
+              })}
+            >
+              <Popup className="font-bold">{label}</Popup>
+            </Marker>
+          );
+        })()}
 
         {/* JOURNEY GOAL: FINAL DESTINATION */}
         {lastMileWithGeo && (
