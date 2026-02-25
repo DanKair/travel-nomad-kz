@@ -81,6 +81,7 @@ class NodeCreate(NodeBase):
 class NodeUpdate(BaseModel):
     """Schema for updating a node (all fields optional)."""
     name: Optional[str] = Field(None, max_length=100, description="Node name")
+    slug: Optional[str] = Field(..., max_length=100, description="URL-friendly identifier")
     latitude: Optional[float] = Field(None, ge=-90, le=90)
     longitude: Optional[float] = Field(None, ge=-180, le=180)
 
@@ -101,15 +102,46 @@ class TransportSegmentBase(BaseModel):
     from_node_id: int = Field(..., description="Origin node ID")
     to_node_id: int = Field(..., description="Destination node ID")
     transport_mode: TransportMode = Field(..., description="Transportation mode")
-    distance_km: float = Field(..., gt=0, description="Distance in kilometers")
-    time_minutes: int = Field(..., gt=0, description="Travel time in minutes")
+    distance_km: Optional[float] = Field(
+        None, gt=0,
+        description="Distance in km. Leave blank to auto-calculate from node coordinates."
+    )
+    time_minutes: Optional[int] = Field(
+        None, gt=0,
+        description="Travel time in minutes. Leave blank to auto-calculate from distance ÷ speed."
+    )
     cost: float = Field(..., ge=0, description="Cost in KZT (Kazakhstan Tenge)")
-    comfort_score: float = Field(5.0, ge=1, le=10, description="Comfort rating (1-10)")
-    co2_kg: float = Field(0.0, ge=0, description="CO2 emissions in kg")
+    comfort_score: Optional[float] = Field(
+        None, ge=1, le=10,
+        description="Comfort rating 1–10. Leave blank to auto-calculate from transport_mode."
+    )
+    co2_kg: Optional[float] = Field(
+        None, ge=0,
+        description="CO2 in kg. Leave blank to auto-calculate: CO2_PER_KM[mode] × distance_km."
+    )
 
 class TransportSegmentCreate(TransportSegmentBase):
     """Schema for creating a new transport segment."""
     pass
+
+
+class SegmentEstimateRequest(BaseModel):
+    """Request schema for the dry-run /estimate endpoint."""
+    from_node_id: int = Field(..., description="Origin node ID")
+    to_node_id: int = Field(..., description="Destination node ID")
+    cost: float = Field(..., ge=0, description="Cost in KZT (Kazakhstan Tenge)")
+    transport_mode: TransportMode = Field(..., description="Transportation mode to estimate for")
+
+
+class SegmentEstimateResponse(BaseModel):
+    """Response from /estimate — preview values before committing a segment."""
+    transport_mode: TransportMode
+    distance_km: float
+    time_minutes: int
+    co2_kg: float
+    comfort_score: float
+    speed_kmh: float = Field(..., description="Speed constant used for time calculation")
+    distance_strategy: str = Field(..., description="Which strategy was used: haversine | osrm | haversine_x_detour")
 
 
 class TransportSegmentUpdate(BaseModel):

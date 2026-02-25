@@ -5,6 +5,8 @@ export enum TransportMode {
   BUS = 'BUS',
   TAXI = 'TAXI',
   MARSHRUTKA = 'MARSHRUTKA',
+  CAR = 'CAR',
+  CABLE_CAR = 'CABLE_CAR',
   WALK = 'WALK'
 }
 

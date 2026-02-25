@@ -85,26 +85,7 @@ app.include_router(nodes.router)
 app.include_router(transport_segments.router)
 app.include_router(point_nodes.router)
 
-
-
-@app.get("/", tags=["Root"])
-def root():
-    """
-    Root endpoint with API information.
-    
-    Returns:
-        Welcome message and links to documentation
-    """
-    return {
-        "message": "Welcome to Kazakhstan Tourism Routing API",
-        "version": settings.app_version,
-        "documentation": "/docs",
-        "openapi": "/openapi.json",
-        "description": "Multi-criteria routing from Almaty to tourist destinations in Southern Kazakhstan"
-    }
-
-
-@app.get("/health", tags=["Health"])
+@app.get("/", tags=["Health"])
 def health_check():
     """
     Health check endpoint for monitoring.

@@ -3,11 +3,13 @@ export const API_BASE_URL = 'http://localhost:8000';
 
 // Backbone transport segment colors (strong, saturated)
 export const TRANSPORT_COLORS: Record<string, string> = {
-  PLANE: '#E74C3C',  // Bold Red
-  TRAIN: '#3498DB',  // Royal Blue
-  BUS: '#2ECC71',  // Emerald Green
-  TAXI: '#F39C12',  // Amber Orange
+  PLANE: '#E74C3C',       // Bold Red
+  TRAIN: '#3498DB',       // Royal Blue
+  BUS: '#2ECC71',         // Emerald Green
+  TAXI: '#F39C12',        // Amber Orange
   MARSHRUTKA: '#9B59B6',  // Purple
+  CAR: '#1ABC9C',         // Teal — private car on road network
+  CABLE_CAR: '#87CEEB',    // Sky Blue — aerial, scenic, mountain
 };
 
 // Last-mile access colors — deliberately distinct from transport palette

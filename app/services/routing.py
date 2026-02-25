@@ -50,6 +50,7 @@ from app.schemas import (
     LastMileAccess
 )
 from app.config import settings
+from app.constants import CO2_PER_KM_ACCESS, COMFORT_SCORE_ACCESS
 
 
 class RoutingService:
@@ -528,9 +529,12 @@ class RoutingService:
         Returns:
             Normalized score for last-mile access
         """
-        # For last-mile, assume comfort is moderate (5.0) and CO2 is low
-        comfort_penalty = 10 - 5.0
-        co2 = 0.5  # Assume minimal CO2 for short last-mile trips
+        # Look up CO2 and comfort from constants based on access_type
+        co2_per_km = CO2_PER_KM_ACCESS.get(point_node.access_type, 0.1)
+        co2 = round(co2_per_km * point_node.distance_km, 3)
+
+        comfort_score = COMFORT_SCORE_ACCESS.get(point_node.access_type, 5.0)
+        comfort_penalty = 10 - comfort_score
         
         return self._calculate_combined_score(
             time=point_node.time_minutes,

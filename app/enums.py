@@ -24,6 +24,8 @@ class TransportMode(str, Enum):
     BUS = "bus"
     TAXI = "taxi"
     MARSHRUTKA = "marshrutka"  # Shared minibus, common in Central Asia
+    CAR = "car"                # Private car (for inter-city or rural segments)
+    CABLE_CAR = "cable_car"
 
 
 class NodeType(str, Enum):
@@ -56,3 +58,4 @@ class AccessType(str, Enum):
     BUS = "bus"                # Local bus
     SHUTTLE = "shuttle"        # Tourist shuttle service
     CAR = "car"                # Private car/rental
+
