@@ -6,9 +6,12 @@
  */
 
 import axios from 'axios';
+import { API_BASE_URL as DEFAULT_API_BASE_URL } from '../constants';
 
-// API Base URL from environment variable
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+// In production (nginx container), always use relative /api so requests route through proxy to "app" service.
+// In local Vite dev, allow overriding with VITE_API_URL for direct backend debugging.
+const devApiBaseUrl = import.meta.env.VITE_API_URL || DEFAULT_API_BASE_URL;
+const API_BASE_URL = import.meta.env.DEV ? devApiBaseUrl : DEFAULT_API_BASE_URL;
 
 // Types (matching your backend)
 export interface Region {
