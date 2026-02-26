@@ -4,10 +4,7 @@ Uses Pydantic Settings for environment-based configuration.
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
+from typing import Optional
 
 class Settings(BaseSettings):
     """
@@ -17,17 +14,20 @@ class Settings(BaseSettings):
     In production, you would set DATABASE_URL environment variable to PostgreSQL.
     """
     
-    # Database configuration
-    POSTGRES_USER: str = os.getenv("POSTGRES_USER", "postgres")
-    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "password")
-    POSTGRES_SERVER: str = os.getenv("POSTGRES_SERVER", "localhost")
-    POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5432")
-    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "nomad_travel_db")
+    # Database — all fields are Optional so SQLite fallback works without .env
+    # Database — Optional so SQLite fallback works when .env is absent.
+    # pydantic-settings reads .env automatically — no need for os.getenv().
+    POSTGRES_USER:     Optional[str] = None
+    POSTGRES_PASSWORD: Optional[str] = None
+    POSTGRES_SERVER:   Optional[str] = None
+    POSTGRES_PORT:     str            = "5432"
+    POSTGRES_DB:       Optional[str] = None
     
     # Application settings
     app_name: str = "Nomad Travel API"
     app_version: str = "1.0.0"
     debug: bool = True
+    root_path: str = ""  # Used when hosting behind a proxy (like Nginx)
     
     # Routing algorithm default weights (can be overridden in API requests)
     # These control the importance of each criterion in route calculation
@@ -44,8 +44,25 @@ class Settings(BaseSettings):
 
     @property
     def DATABASE_URL(self) -> str:
-        # SQLAlchemy 1.4+ uses postgresql+psycopg2:// instead of postgres://
-        return f"postgresql+psycopg2://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        """
+        Build the database URL from environment variables.
+
+        If all 4 Postgres credentials are present → use PostgreSQL.
+        Otherwise → fall back to SQLite (local development without .env).
+        """
+        pg_ready = all([
+            self.POSTGRES_USER,
+            self.POSTGRES_PASSWORD,
+            self.POSTGRES_SERVER,
+            self.POSTGRES_DB,
+        ])
+        if pg_ready:
+            return (
+                f"postgresql+psycopg2://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+                f"@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+            )
+        # Fallback: SQLite for local dev / CI without a running Postgres instance
+        return "sqlite:///./app.db"
 
 
 # Global settings instance

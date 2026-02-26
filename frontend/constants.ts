@@ -1,5 +1,5 @@
 
-export const API_BASE_URL = 'http://localhost:8000';
+export const API_BASE_URL = '/api';
 
 // Backbone transport segment colors (strong, saturated)
 export const TRANSPORT_COLORS: Record<string, string> = {

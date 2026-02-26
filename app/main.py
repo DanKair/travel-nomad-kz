@@ -62,7 +62,8 @@ app = FastAPI(
     - **PointNode**: Last-mile access (applied after routing)
     """,
     lifespan=lifespan,
-    debug=settings.debug
+    debug=settings.debug,
+    root_path=settings.root_path,
 )
 
 

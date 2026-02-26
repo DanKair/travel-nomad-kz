@@ -1,0 +1,19 @@
+__pycache__
+*.pyc
+*.pyo
+.venv
+venv
+node_modules
+target/
+dist
+build
+
+# Sensitive files
+.env
+.env.local
+
+# Logs and OS files
+*.log
+*.tmp
+.DS_Store
+
