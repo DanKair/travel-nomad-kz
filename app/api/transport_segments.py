@@ -6,7 +6,6 @@ two Nodes with a specific transport mode and cost metrics.
 
 AUTO-CALCULATION (all 4 fields are optional on create):
     distance_km   → Haversine (air/cable), OSRM (roads), Haversine×1.2 (train)
-    time_minutes  → distance_km / SPEED_KMH[mode] × 60
     co2_kg        → CO2_PER_KM[mode] × distance_km
     comfort_score → COMFORT_SCORE[mode]
 
@@ -18,9 +17,11 @@ ESTIMATE ENDPOINT:
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import aliased
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
-from app.constants import CO2_PER_KM, COMFORT_SCORE, SPEED_KMH
+from app.constants import CO2_PER_KM, COMFORT_SCORE
 from app.database import get_db
 from app.enums import TransportMode
 from app.models import TransportSegment, Node
@@ -31,7 +32,7 @@ from app.schemas import (
     SegmentEstimateRequest,
     SegmentEstimateResponse,
 )
-from app.services.distance import estimate_segment
+from app.services.distance import estimate_distance, _AIR_MODES, _ROAD_MODES
 
 router = APIRouter(prefix="/transport-segments", tags=["Transport Segments"])
 
@@ -40,9 +41,10 @@ router = APIRouter(prefix="/transport-segments", tags=["Transport Segments"])
 # HELPERS
 # =============================================================================
 
-def _get_node_or_404(db: Session, node_id: int, label: str) -> Node:
+async def _get_node_or_404(db: AsyncSession, node_id: int, label: str) -> Node:
     """Fetch a Node by ID, raise 404 with a helpful message if not found."""
-    node = db.query(Node).filter(Node.id == node_id).first()
+    result = await db.execute(select(Node).filter(Node.id == node_id))
+    node = result.scalars().first()
     if not node:
         raise HTTPException(
             status_code=404,
@@ -68,7 +70,6 @@ def _fill_auto_fields(data: dict, mode: TransportMode, distance_km: float) -> di
 
 def _distance_strategy_name(mode: TransportMode) -> str:
     """Human-readable label for which distance strategy was used."""
-    from app.services.distance import _AIR_MODES, _ROAD_MODES
     if mode in _AIR_MODES:
         return "haversine"
     if mode in _ROAD_MODES:
@@ -83,7 +84,7 @@ def _distance_strategy_name(mode: TransportMode) -> str:
 @router.post("/estimate", response_model=SegmentEstimateResponse)
 async def estimate_transport_segment(
     body: SegmentEstimateRequest,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     **Dry-run preview** — estimate all auto-calculated fields for a segment
@@ -99,31 +100,26 @@ async def estimate_transport_segment(
     - `speed_kmh` — the speed constant used
     - `distance_strategy` — which algorithm calculated the distance
     """
-    from_node = _get_node_or_404(db, body.from_node_id, "from_node_id")
-    to_node   = _get_node_or_404(db, body.to_node_id,   "to_node_id")
+    from_node = await _get_node_or_404(db, body.from_node_id, "from_node_id")
+    to_node   = await _get_node_or_404(db, body.to_node_id,   "to_node_id")
 
-    # Estimate distance + time
-    estimated = await estimate_segment(
+    distance_km = await estimate_distance(
         from_lat=from_node.latitude,  from_lon=from_node.longitude,
         to_lat=to_node.latitude,      to_lon=to_node.longitude,
         mode=body.transport_mode,
     )
 
-    distance_km = estimated["distance_km"]
-
     return SegmentEstimateResponse(
         transport_mode=body.transport_mode,
         distance_km=distance_km,
-        time_minutes=estimated["time_minutes"],
         co2_kg=round(CO2_PER_KM[body.transport_mode] * distance_km, 3),
         comfort_score=COMFORT_SCORE[body.transport_mode],
-        speed_kmh=SPEED_KMH[body.transport_mode],
         distance_strategy=_distance_strategy_name(body.transport_mode),
     )
 
 
 @router.get("", response_model=List[TransportSegmentResponse])
-def get_transport_segments(
+async def get_transport_segments(
     transport_mode: Optional[TransportMode] = Query(
         None,
         description="Filter by transport mode (plane, train, bus, taxi, marshrutka, car, cable_car)"
@@ -136,7 +132,7 @@ def get_transport_segments(
     to_node_name: Optional[str] = Query(
         None, description="Partial destination name search. E.g. 'shym' → Shymkent"
     ),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     List all transport segments with optional filtering.
@@ -145,7 +141,7 @@ def get_transport_segments(
     - `GET /transport-segments?transport_mode=bus`
     - `GET /transport-segments?from_node_name=almaty&to_node_name=shym`
     """
-    query = db.query(TransportSegment)
+    query = select(TransportSegment)
 
     if transport_mode:
         query = query.filter(TransportSegment.transport_mode == transport_mode)
@@ -161,13 +157,15 @@ def get_transport_segments(
         query = query.join(DestNode, TransportSegment.to_node_id == DestNode.id)
         query = query.filter(DestNode.name.ilike(f"%{to_node_name}%"))
 
-    return query.all()
+    result = await db.execute(query)
+    return result.scalars().all()
 
 
 @router.get("/{segment_id}", response_model=TransportSegmentResponse)
-def get_transport_segment(segment_id: int, db: Session = Depends(get_db)):
+async def get_transport_segment(segment_id: int, db: AsyncSession = Depends(get_db)):
     """Get a specific transport segment by ID."""
-    segment = db.query(TransportSegment).filter(TransportSegment.id == segment_id).first()
+    result = await db.execute(select(TransportSegment).filter(TransportSegment.id == segment_id))
+    segment = result.scalars().first()
     if not segment:
         raise HTTPException(status_code=404, detail="Transport segment not found")
     return segment
@@ -176,44 +174,39 @@ def get_transport_segment(segment_id: int, db: Session = Depends(get_db)):
 @router.post("", response_model=TransportSegmentResponse, status_code=201)
 async def create_transport_segment(
     segment_data: TransportSegmentCreate,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Create a new transport segment.
 
     All four metric fields are **optional** — if omitted, they are auto-calculated:
     - `distance_km` → from node coordinates (Haversine / OSRM / rail detour)
-    - `time_minutes` → `distance_km / SPEED_KMH[mode] × 60`
     - `co2_kg` → `CO2_PER_KM[mode] × distance_km`
     - `comfort_score` → `COMFORT_SCORE[mode]`
 
     Use `POST /transport-segments/estimate` to preview values first.
     """
-    from_node = _get_node_or_404(db, segment_data.from_node_id, "from_node_id")
-    to_node   = _get_node_or_404(db, segment_data.to_node_id,   "to_node_id")
+    from_node = await _get_node_or_404(db, segment_data.from_node_id, "from_node_id")
+    to_node   = await _get_node_or_404(db, segment_data.to_node_id,   "to_node_id")
 
     data = segment_data.model_dump()
     mode = segment_data.transport_mode
 
-    # Auto-calculate distance + time if not supplied
-    if data.get("distance_km") is None or data.get("time_minutes") is None:
-        estimated = await estimate_segment(
+    # Auto-calculate distance_km from node coordinates if not supplied
+    if data.get("distance_km") is None:
+        data["distance_km"] = await estimate_distance(
             from_lat=from_node.latitude,  from_lon=from_node.longitude,
             to_lat=to_node.latitude,      to_lon=to_node.longitude,
             mode=mode,
         )
-        if data.get("distance_km") is None:
-            data["distance_km"] = estimated["distance_km"]
-        if data.get("time_minutes") is None:
-            data["time_minutes"] = estimated["time_minutes"]
 
     # Auto-calculate CO2 + comfort from the now-resolved distance
     data = _fill_auto_fields(data, mode, data["distance_km"])
 
     new_segment = TransportSegment(**data)
     db.add(new_segment)
-    db.commit()
-    db.refresh(new_segment)
+    await db.commit()
+    await db.refresh(new_segment)
     return new_segment
 
 
@@ -221,7 +214,7 @@ async def create_transport_segment(
 async def update_transport_segment(
     segment_id: int,
     segment_data: TransportSegmentUpdate,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Update an existing transport segment (only provided fields change).
@@ -229,7 +222,8 @@ async def update_transport_segment(
     If `transport_mode` or `distance_km` changes and `co2_kg` / `comfort_score`
     are not supplied, they are **recalculated** from the new values.
     """
-    segment = db.query(TransportSegment).filter(TransportSegment.id == segment_id).first()
+    result = await db.execute(select(TransportSegment).filter(TransportSegment.id == segment_id))
+    segment = result.scalars().first()
     if not segment:
         raise HTTPException(status_code=404, detail="Transport segment not found")
 
@@ -244,17 +238,18 @@ async def update_transport_segment(
     for field, value in update_data.items():
         setattr(segment, field, value)
 
-    db.commit()
-    db.refresh(segment)
+    await db.commit()
+    await db.refresh(segment)
     return segment
 
 
 @router.delete("/{segment_id}", status_code=204)
-def delete_transport_segment(segment_id: int, db: Session = Depends(get_db)):
+async def delete_transport_segment(segment_id: int, db: AsyncSession = Depends(get_db)):
     """Delete a transport segment."""
-    segment = db.query(TransportSegment).filter(TransportSegment.id == segment_id).first()
+    result = await db.execute(select(TransportSegment).filter(TransportSegment.id == segment_id))
+    segment = result.scalars().first()
     if not segment:
         raise HTTPException(status_code=404, detail="Transport segment not found")
-    db.delete(segment)
-    db.commit()
+    await db.delete(segment)
+    await db.commit()
     return None

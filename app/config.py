@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     POSTGRES_DB:       Optional[str] = None
     
     # Application settings
-    app_name: str = "Nomad Travel API"
+    app_name: str = "Nomad Travel KZ"
     app_version: str = "1.0.0"
     debug: bool = True
     root_path: str = ""  # Used when hosting behind a proxy (like Nginx)
@@ -58,11 +58,11 @@ class Settings(BaseSettings):
         ])
         if pg_ready:
             return (
-                f"postgresql+psycopg2://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+                f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
                 f"@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
             )
         # Fallback: SQLite for local dev / CI without a running Postgres instance
-        return "sqlite:///./app.db"
+        return "sqlite+aiosqlite:///./app.db"
 
 
 # Global settings instance

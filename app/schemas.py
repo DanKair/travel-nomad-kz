@@ -67,9 +67,9 @@ class CategoryResponse(CategoryBase):
 class NodeBase(BaseModel):
     """Base schema with common node fields."""
     name: str = Field(..., max_length=200, description="Node name")
-    slug: str = Field(..., max_length=200, description="URL-friendly identifier")
-    latitude: float = Field(..., ge=-90, le=90, description="Latitude coordinate")
-    longitude: float = Field(..., ge=-180, le=180, description="Longitude coordinate")
+    slug: Optional[str] = Field(None    , max_length=200, description="URL-friendly identifier")
+    latitude: Optional[float] = Field(None, ge=-90, le=90, description="Latitude coordinate")
+    longitude: Optional[float] = Field(None, ge=-180, le=180, description="Longitude coordinate")
     node_type: NodeType = Field(..., description="Type of transportation node")
 
 
@@ -81,9 +81,10 @@ class NodeCreate(NodeBase):
 class NodeUpdate(BaseModel):
     """Schema for updating a node (all fields optional)."""
     name: Optional[str] = Field(None, max_length=100, description="Node name")
-    slug: Optional[str] = Field(..., max_length=100, description="URL-friendly identifier")
+    slug: Optional[str] = Field(None, max_length=100, description="URL-friendly identifier")
     latitude: Optional[float] = Field(None, ge=-90, le=90)
     longitude: Optional[float] = Field(None, ge=-180, le=180)
+    node_type: NodeType = Field(None, description="Type of transportation node")
 
 
 class NodeResponse(NodeBase):
@@ -106,10 +107,7 @@ class TransportSegmentBase(BaseModel):
         None, gt=0,
         description="Distance in km. Leave blank to auto-calculate from node coordinates."
     )
-    time_minutes: Optional[int] = Field(
-        None, gt=0,
-        description="Travel time in minutes. Leave blank to auto-calculate from distance ÷ speed."
-    )
+    time_minutes: int = Field(..., gt=0, description="Travel time in minutes.")
     cost: float = Field(..., ge=0, description="Cost in KZT (Kazakhstan Tenge)")
     comfort_score: Optional[float] = Field(
         None, ge=1, le=10,
@@ -134,14 +132,12 @@ class SegmentEstimateRequest(BaseModel):
 
 
 class SegmentEstimateResponse(BaseModel):
-    """Response from /estimate — preview values before committing a segment."""
+    """Response from /estimate — preview distance values before committing a segment."""
     transport_mode: TransportMode
     distance_km: float
-    time_minutes: int
     co2_kg: float
     comfort_score: float
-    speed_kmh: float = Field(..., description="Speed constant used for time calculation")
-    distance_strategy: str = Field(..., description="Which strategy was used: haversine | osrm | haversine_x_detour")
+    distance_strategy: str = Field(..., description="Algorithm used: haversine | osrm | haversine_x_detour")
 
 
 class TransportSegmentUpdate(BaseModel):
@@ -172,11 +168,11 @@ class TouristPointBase(BaseModel):
     """Base schema with common tourist point fields."""
     name: str = Field(..., max_length=200, description="Tourist point name")
     # TODO: Make it Optional Field for slug Auto-generation
-    slug: str = Field(..., max_length=200, description="URL-friendly identifier")
+    slug: Optional[str] = Field(None, max_length=200, description="URL-friendly identifier")
     description: Optional[str] = Field(None, description="Detailed description")
     image_url: Optional[str] = Field(None, max_length=500, description="Image URL")
-    latitude: float = Field(..., ge=-90, le=90, description="Latitude coordinate")
-    longitude: float = Field(..., ge=-180, le=180, description="Longitude coordinate")
+    latitude: Optional[float] = Field(None, ge=-90, le=90, description="Latitude coordinate")
+    longitude: Optional[float] = Field(None, ge=-180, le=180, description="Longitude coordinate")
     region_id: int = Field(..., description="Region ID")
     category_id: int = Field(..., description="Category ID")
     

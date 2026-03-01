@@ -6,7 +6,8 @@ Provides CRUD operations for regions (geographic/administrative groupings).
 
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 from app.database import get_db
 from app.models import Region
 from app.schemas import RegionCreate, RegionUpdate, RegionResponse
@@ -16,19 +17,20 @@ router = APIRouter(prefix="/regions", tags=["Regions"])
 
 
 @router.get("", response_model=List[RegionResponse])
-def get_regions(db: Session = Depends(get_db)):
+async def get_regions(db: AsyncSession = Depends(get_db)):
     """
     Get all regions.
     
     Returns:
         List of all regions in the database
     """
-    regions = db.query(Region).all()
+    result = await db.execute(select(Region))
+    regions = result.scalars().all()
     return regions
 
 
 @router.get("/{region_id}", response_model=RegionResponse)
-def get_region(region_id: int, db: Session = Depends(get_db)):
+async def get_region(region_id: int, db: AsyncSession = Depends(get_db)):
     """
     Get a specific region by ID.
     
@@ -41,7 +43,8 @@ def get_region(region_id: int, db: Session = Depends(get_db)):
     Raises:
         404: If region not found
     """
-    region = db.query(Region).filter(Region.id == region_id).first()
+    result = await db.execute(select(Region).filter(Region.id == region_id))
+    region = result.scalars().first()
     if not region:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -51,7 +54,7 @@ def get_region(region_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=RegionResponse, status_code=status.HTTP_201_CREATED)
-def create_region(region_data: RegionCreate, db: Session = Depends(get_db)):
+async def create_region(region_data: RegionCreate, db: AsyncSession = Depends(get_db)):
     """
     Create a new region.
     
@@ -65,7 +68,8 @@ def create_region(region_data: RegionCreate, db: Session = Depends(get_db)):
         400: If region with same name already exists
     """
     # Check if region with same name exists
-    existing = db.query(Region).filter(Region.name == region_data.name).first()
+    result = await db.execute(select(Region).filter(Region.name == region_data.name))
+    existing = result.scalars().first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -75,16 +79,16 @@ def create_region(region_data: RegionCreate, db: Session = Depends(get_db)):
     # Create new region
     region = Region(**region_data.model_dump())
     db.add(region)
-    db.commit()
-    db.refresh(region)
+    await db.commit()
+    await db.refresh(region)
     return region
 
 
 @router.patch("/{region_id}", response_model=RegionResponse)
-def update_region(
+async def update_region(
     region_id: int,
     region_data: RegionUpdate,
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Update an existing region.
@@ -99,7 +103,8 @@ def update_region(
     Raises:
         404: If region not found
     """
-    region = db.query(Region).filter(Region.id == region_id).first()
+    result = await db.execute(select(Region).filter(Region.id == region_id))
+    region = result.scalars().first()
     if not region:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -111,17 +116,18 @@ def update_region(
     for field, value in update_data.items():
         setattr(region, field, value)
     
-    db.commit()
-    db.refresh(region)
+    await db.commit()
+    await db.refresh(region)
     return region
 
 @router.delete("/regions/{region_id}", response_model=str)
-def delete_region(region_id: int, db: Session = Depends(get_db)):
-    target_region = db.query(Region).filter(Region.id == region_id).first()
+async def delete_region(region_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Region).filter(Region.id == region_id))
+    target_region = result.scalars().first()
     if target_region is None:
         raise HTTPException(status_code=404, detail="Region not found")
 
     deleted_region = target_region.name
-    db.delete(target_region)
-    db.commit()
+    await db.delete(target_region)
+    await db.commit()
     return f"{deleted_region} has been removed."

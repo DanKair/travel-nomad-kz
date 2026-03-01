@@ -6,7 +6,7 @@ Main endpoint for calculating optimal routes from nodes to tourist points.
 
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.schemas import RouteResponse
 from app.services.routing import RoutingService
@@ -16,14 +16,14 @@ router = APIRouter(prefix="/routes", tags=["Routing"])
 
 
 @router.get("", response_model=RouteResponse)
-def calculate_route(
+async def calculate_route(
     from_node: str = Query(..., description="Starting node slug (e.g., 'almaty')"),
     to_tourist_point: str = Query(..., description="Destination tourist point slug (e.g., 'charyn-canyon')"),
     time_weight: Optional[float] = Query(None, ge=0, le=1, description="Time importance (0-1)"),
     cost_weight: Optional[float] = Query(None, ge=0, le=1, description="Cost importance (0-1)"),
     comfort_weight: Optional[float] = Query(None, ge=0, le=1, description="Comfort importance (0-1)"),
     co2_weight: Optional[float] = Query(None, ge=0, le=1, description="CO2 importance (0-1)"),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Calculate optimal route from a node to a tourist point.
@@ -69,7 +69,7 @@ def calculate_route(
         routing_service = RoutingService(db)
         
         # Calculate route
-        route = routing_service.calculate_route(
+        route = await routing_service.calculate_route(
             from_node_slug=from_node,
             to_tourist_point_slug=to_tourist_point,
             time_weight=time_weight,

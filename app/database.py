@@ -8,23 +8,23 @@ This module sets up SQLAlchemy 2.x with:
 - Database initialization
 """
 
-from typing import Generator
-from sqlalchemy import create_engine
-from sqlalchemy.orm import DeclarativeBase, sessionmaker, Session
+from typing import AsyncGenerator
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.orm import DeclarativeBase
 from app.config import settings
 
 
 # Create SQLAlchemy engine
 # For SQLite: check_same_thread=False allows FastAPI to use the same connection across threads
 # For production PostgreSQL, you'd use a connection pool instead
-engine = create_engine(
+engine = create_async_engine(
     settings.DATABASE_URL,
     connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {},
     echo=settings.debug  # Log SQL queries in debug mode
 )
 
 # Session factory for creating database sessions
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 class Base(DeclarativeBase):
@@ -37,13 +37,13 @@ class Base(DeclarativeBase):
     pass
 
 
-def get_db() -> Generator[Session, None, None]:
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
     Dependency function for FastAPI to inject database sessions.
     
     Usage in FastAPI endpoints:
         @app.get("/items")
-        def get_items(db: Session = Depends(get_db)):
+        async def get_items(db: AsyncSession = Depends(get_db)):
             ...
     
     This ensures:
@@ -51,14 +51,14 @@ def get_db() -> Generator[Session, None, None]:
     - Session is automatically closed after request
     - Proper transaction handling
     """
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    async with SessionLocal() as db:
+        try:
+            yield db
+        finally:
+            await db.close()
 
 
-def init_db() -> None:
+async def init_db() -> None:
     """
     Initialize the database by creating all tables.
     
@@ -69,5 +69,6 @@ def init_db() -> None:
     from app import models  # noqa: F401
     
     # Create all tables
-    Base.metadata.create_all(bind=engine)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
     print("✅ Database initialized successfully")

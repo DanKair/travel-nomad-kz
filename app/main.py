@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
     """
     # Startup: Initialize database
     print("🚀 Starting Kazakhstan Tourism Routing API...")
-    init_db()
+    await init_db()
     print("✅ Database initialized")
     
     yield

@@ -74,35 +74,3 @@ COMFORT_SCORE_ACCESS: dict[AccessType, float] = {
     AccessType.BUS:     5.0,
     AccessType.WALK:    7.0,  # Pleasant when short, healthy, no waiting
 }
-
-
-# =============================================================================
-# SPEED CONSTANTS  (km/h) — used to derive time_minutes from distance_km
-# =============================================================================
-# Formula: time_minutes = (distance_km / SPEED_KMH[mode]) * 60
-#
-# All values are realistic averages for Kazakhstan intercity travel,
-# including boarding time, stops, and typical delays.
-# Sources: KZ transport statistics, OpenTransport benchmarks, EuroTest 2022.
-
-SPEED_KMH: dict[TransportMode, float] = {
-    TransportMode.PLANE:      750.0,  # Cruising speed short-haul (excl. airport time)
-    TransportMode.TRAIN:       80.0,  # KZ intercity average including stops
-    TransportMode.BUS:         60.0,  # Highway coach on KZ roads
-    TransportMode.CAR:         90.0,  # Private car on highway
-    TransportMode.TAXI:        80.0,  # Same roads as car, slightly more cautious
-    TransportMode.MARSHRUTKA:  60.0,  # More stops and slower roads
-    TransportMode.CABLE_CAR:   20.0,  # Typical gondola cruising speed
-}
-
-# Speed for last-mile AccessType (shorter trips, urban speeds)
-ACCESS_SPEED_KMH: dict[AccessType, float] = {
-    AccessType.WALK:     5.0,   # Comfortable walking pace
-    AccessType.BUS:     25.0,   # City bus with stops
-    AccessType.TAXI:    40.0,   # Urban taxi
-    AccessType.CAR:     40.0,   # Urban car
-    AccessType.SHUTTLE: 35.0,   # Tourist shuttle on access roads
-}
-
-# Rail uses Haversine × this factor (tracks curve around terrain, not straight lines)
-RAIL_DETOUR_FACTOR: float = 1.20

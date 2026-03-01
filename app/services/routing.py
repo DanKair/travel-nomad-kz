@@ -42,7 +42,9 @@ ARCHITECTURE NOTES:
 
 from typing import Dict, List, Tuple, Optional
 import heapq
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import joinedload
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 from app.models import Node, TransportSegment, TouristPoint, PointNode
 from app.schemas import (
     RouteResponse,
@@ -58,7 +60,7 @@ class RoutingService:
     Service for calculating optimal routes using multi-criteria Dijkstra.
     """
     
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         """
         Initialize routing service with database session.
         
@@ -67,7 +69,7 @@ class RoutingService:
         """
         self.db = db
     
-    def calculate_route(
+    async def calculate_route(
         self,
         from_node_slug: str,
         to_tourist_point_slug: str,
@@ -106,21 +108,26 @@ class RoutingService:
         weights = self._get_weights(time_weight, cost_weight, comfort_weight, co2_weight)
         
         # 1. Resolve starting node
-        start_node = self.db.query(Node).filter(Node.slug == from_node_slug).first()
+        result = await self.db.execute(select(Node).filter(Node.slug == from_node_slug))
+        start_node = result.scalars().first()
         if not start_node:
             raise ValueError(f"Starting node '{from_node_slug}' not found")
         
         # 2. Resolve destination tourist point
-        tourist_point = self.db.query(TouristPoint).filter(
-            TouristPoint.slug == to_tourist_point_slug
-        ).first()
+        result = await self.db.execute(
+            select(TouristPoint).filter(TouristPoint.slug == to_tourist_point_slug)
+        )
+        tourist_point = result.scalars().first()
         if not tourist_point:
             raise ValueError(f"Tourist point '{to_tourist_point_slug}' not found")
         
         # 3. Get all PointNodes (last-mile access options) for this tourist point
-        point_nodes = self.db.query(PointNode).filter(
-            PointNode.tourist_point_id == tourist_point.id
-        ).all()
+        result = await self.db.execute(
+            select(PointNode)
+            .options(joinedload(PointNode.node), joinedload(PointNode.tourist_point))
+            .filter(PointNode.tourist_point_id == tourist_point.id)
+        )
+        point_nodes = result.scalars().all()
         
         if not point_nodes:
             raise ValueError(
@@ -134,7 +141,7 @@ class RoutingService:
         for point_node in point_nodes:
             try:
                 # Calculate route from start to the node connected to this PointNode
-                route = self._dijkstra_multi_criteria(
+                route = await self._dijkstra_multi_criteria(
                     start_node.id,
                     point_node.node_id,
                     weights
@@ -201,7 +208,7 @@ class RoutingService:
         
         return weights
     
-    def _dijkstra_multi_criteria(
+    async def _dijkstra_multi_criteria(
         self,
         start_node_id: int,
         end_node_id: int,
@@ -251,7 +258,7 @@ class RoutingService:
         """
         
         # Step 1: Build graph (adjacency list) from TransportSegments
-        graph = self._build_graph()
+        graph = await self._build_graph()
         
         if start_node_id not in graph:
             return None
@@ -372,7 +379,7 @@ class RoutingService:
             'optimization_score': total_metrics['score']
         }
     
-    def _build_graph(self) -> Dict[int, List[Tuple[int, TransportSegment]]]:
+    async def _build_graph(self) -> Dict[int, List[Tuple[int, TransportSegment]]]:
         """
         Build adjacency list representation of the transport network.
         
@@ -395,7 +402,11 @@ class RoutingService:
         graph: Dict[int, List[Tuple[int, TransportSegment]]] = {}
         
         # Query all transport segments from database
-        segments = self.db.query(TransportSegment).all()
+        result = await self.db.execute(
+            select(TransportSegment)
+            .options(joinedload(TransportSegment.from_node), joinedload(TransportSegment.to_node))
+        )
+        segments = result.scalars().all()
         
         # Build adjacency list
         for segment in segments:
