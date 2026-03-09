@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Configuration — swap OSRM_BASE_URL via env var in production
 # ---------------------------------------------------------------------------
-OSRM_BASE_URL = "http://router.project-osrm.org"
+OSRM_BASE_URL = "http://router.project-osrm.org/route/v1/driving"
 OSRM_TIMEOUT_S = 5.0
 
 # Rail tracks are ~20% longer than straight-line (curves around terrain)
@@ -75,7 +75,7 @@ async def road_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -
     OSRM uses (longitude, latitude) order — note the swap!
     Falls back to Haversine × 1.35 if OSRM is unreachable.
     """
-    url = f"{OSRM_BASE_URL}/route/v1/driving/{lon1},{lat1};{lon2},{lat2}"
+    url = f"{OSRM_BASE_URL}/{lon1},{lat1};{lon2},{lat2}"
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.get(
