@@ -8,8 +8,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.database import init_db
-from app.api import regions, tourist_points, routing, tourist_point_categories, point_nodes, transport_segments, nodes
+from app.database import init_db, engine
+from app.api import regions, tourist_points, routing, tourist_point_categories, point_nodes, transport_segments, nodes, data_management
+from sqladmin import Admin
+from app.admin.views import admin_views
 
 
 @asynccontextmanager
@@ -63,7 +65,10 @@ app = FastAPI(
     """,
     lifespan=lifespan,
     debug=settings.debug,
-    root_path=settings.root_path,
+    # Move documentation behind /api prefix for easier proxying
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
 )
 
 
@@ -76,15 +81,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Register routers with /api prefix
+app.include_router(regions.router, prefix="/api")
+app.include_router(tourist_points.router, prefix="/api")
+app.include_router(tourist_point_categories.router, prefix="/api")
+app.include_router(routing.router, prefix="/api")
+app.include_router(nodes.router, prefix="/api")
+app.include_router(transport_segments.router, prefix="/api")
+app.include_router(point_nodes.router, prefix="/api")
+app.include_router(data_management.router, prefix="/api")
 
-# Register routers
-app.include_router(regions.router)
-app.include_router(tourist_points.router)
-app.include_router(tourist_point_categories.router)
-app.include_router(routing.router)
-app.include_router(nodes.router)
-app.include_router(transport_segments.router)
-app.include_router(point_nodes.router)
+# Setup SQLAdmin
+admin = Admin(app, engine)
+for view in admin_views:
+    admin.add_view(view)
 
 @app.get("/", tags=["Health"])
 def health_check():

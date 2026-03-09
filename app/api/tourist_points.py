@@ -3,17 +3,14 @@ Tourist Points API Endpoints
 
 Provides CRUD operations and filtering for tourist points.
 """
-import time
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from geopy import Nominatim
 from slugify import slugify
 from sqlalchemy import select
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.coordinates import geocode_async
 
-from app.config import settings
 from app.database import get_db
 from app.models import TouristPoint, Region, TouristPointCategory
 from app.schemas import TouristPointCreate, TouristPointUpdate, TouristPointResponse
@@ -84,54 +81,46 @@ async def get_tourist_point(point_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("", response_model=TouristPointResponse, status_code=status.HTTP_201_CREATED)
-async def create_tourist_point(point_data: TouristPointCreate, db: AsyncSession = Depends(get_db)):
-    """
-    Create a new tourist point.
-    
-    Args:
-        point_data: Tourist point creation data
-    
-    Returns:
-        Created tourist point
-    
-    Raises:
-        400: If tourist point with same slug already exists
-    """
+async def create_tourist_point(
+    point_data: TouristPointCreate,
+    db: AsyncSession = Depends(get_db)
+):
     # Creating slug if missing
     if not point_data.slug:
         point_data.slug = slugify(point_data.name)
 
-
-    # Check if tourist point with same slug exists
+    # Check if exists
     result = await db.execute(select(TouristPoint).filter(TouristPoint.slug == point_data.slug))
-    existing = result.scalars().first()
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Tourist point with slug '{point_data.slug}' already exists"
-        )
+    if result.scalars().first():
+        raise HTTPException(status_code=400, detail="Point already exists")
 
-    # 3) Auto-geocode if coords are not provided
+    # Auto-geocode
     if point_data.latitude is None or point_data.longitude is None:
-        try:
-            location = await geocode_async(point_data.name)
-            if not location:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Cannot find coordinates for this place"
-                )
-            point_data.latitude = float(location["lat"])
-            point_data.longitude = float(location["lon"])
+        location = await geocode_async(point_data.name)
+        if not location:
+            raise HTTPException(status_code=404, detail="Cannot find coords")
+        point_data.latitude = float(location["lat"])
+        point_data.longitude = float(location["lon"])
 
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Geocoding error: {e}")
-    
-    # Create new tourist point
+    # Create and commit
     point = TouristPoint(**point_data.model_dump())
     db.add(point)
     await db.commit()
+
     await db.refresh(point)
-    return point
+
+    # Fetch with relations eagerly loaded
+    result = await db.execute(
+        select(TouristPoint)
+        .where(TouristPoint.id == point.id)
+        .options(
+            selectinload(TouristPoint.region),
+            selectinload(TouristPoint.category)
+        )
+    )
+    created_point = result.scalars().one()
+
+    return created_point
 
 @router.patch("/{point_id}", response_model=TouristPointResponse)
 async def update_tourist_point(
@@ -184,6 +173,10 @@ async def update_tourist_point(
                 status_code=400,
                 detail="Invalid category_id"
             )
+
+    # Auto-Generating Slug
+    if (point_data.name) and point_data.slug is None:
+        point_data.slug = slugify(point_data.name)
 
     # Update fields
     update_data = point_data.model_dump(exclude_unset=True)

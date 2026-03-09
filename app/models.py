@@ -39,6 +39,9 @@ class Region(Base):
     
     def __repr__(self) -> str:
         return f"<Region(id={self.id}, name='{self.name}')>"
+    
+    def __str__(self) -> str:
+        return self.name
 
 
 class TouristPointCategory(Base):
@@ -85,6 +88,9 @@ class TouristPointCategory(Base):
     
     def __repr__(self) -> str:
         return f"<Category(id={self.id}, name='{self.name}')>"
+    
+    def __str__(self) -> str:
+        return self.name
 
 
 class Node(Base):
@@ -141,6 +147,9 @@ class Node(Base):
     
     def __repr__(self) -> str:
         return f"<Node(id={self.id}, name='{self.name}', type={self.node_type})>"
+    
+    def __str__(self) -> str:
+        return self.name
 
 # Slug Auto-Generation for Node Model
 """
@@ -221,6 +230,9 @@ class TransportSegment(Base):
             f"from={self.from_node_id}→{self.to_node_id}, "
             f"mode={self.transport_mode})>"
         )
+    
+    def __str__(self) -> str:
+        return f"{self.transport_mode}: {self.from_node_id} -> {self.to_node_id}"
 
 
 class TouristPoint(Base):
@@ -252,8 +264,8 @@ class TouristPoint(Base):
     image_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     
     # Geographic coordinates (for display, NOT for routing)
-    latitude: Mapped[float] = mapped_column(Float, nullable=False)
-    longitude: Mapped[float] = mapped_column(Float, nullable=False)
+    latitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    longitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     
     # Optional metadata fields for enhanced UI display
     elevation_m: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # Elevation in meters
@@ -288,6 +300,9 @@ class TouristPoint(Base):
     
     def __repr__(self) -> str:
         return f"<TouristPoint(id={self.id}, name='{self.name}')>"
+    
+    def __str__(self) -> str:
+        return self.name
 
 # Slug Auto-Generation for TouristPoint Model
 """@event.listens_for(TouristPoint, "before_insert")
@@ -365,3 +380,6 @@ class PointNode(Base):
             f"node={self.node_id}, "
             f"access={self.access_type})>"
         )
+    
+    def __str__(self) -> str:
+        return f"{self.access_type}: Point {self.tourist_point_id} from Node {self.node_id}"

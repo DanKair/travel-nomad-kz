@@ -103,12 +103,12 @@ class TransportSegmentBase(BaseModel):
     from_node_id: int = Field(..., description="Origin node ID")
     to_node_id: int = Field(..., description="Destination node ID")
     transport_mode: TransportMode = Field(..., description="Transportation mode")
+    time_minutes: int = Field(..., gt=0, description="Travel time in minutes.")
+    cost: float = Field(..., ge=0, description="Cost in KZT (Kazakhstan Tenge)")
     distance_km: Optional[float] = Field(
         None, gt=0,
         description="Distance in km. Leave blank to auto-calculate from node coordinates."
     )
-    time_minutes: int = Field(..., gt=0, description="Travel time in minutes.")
-    cost: float = Field(..., ge=0, description="Cost in KZT (Kazakhstan Tenge)")
     comfort_score: Optional[float] = Field(
         None, ge=1, le=10,
         description="Comfort rating 1–10. Leave blank to auto-calculate from transport_mode."
@@ -191,6 +191,7 @@ class TouristPointCreate(TouristPointBase):
 class TouristPointUpdate(BaseModel):
     """Schema for updating a tourist point (all fields optional)."""
     name: Optional[str] = Field(None, max_length=200)
+    slug: Optional[str] = Field(None, max_length=200)
     description: Optional[str] = None
     image_url: Optional[str] = Field(None, max_length=500)
     latitude: Optional[float] = Field(None, ge=-90, le=90)

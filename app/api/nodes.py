@@ -8,7 +8,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.params import Depends
-from geopy import Nominatim
+
 from slugify import slugify
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -69,7 +69,6 @@ async def get_node_by_id(node_id: int, db: AsyncSession = Depends(get_db)):
     return node
 
 
-geolocator = Nominatim(user_agent=settings.app_name)
 
 @router.post("", response_model=NodeResponse, status_code=201)
 async def create_transport_node(node_data: NodeCreate, db: AsyncSession = Depends(get_db)):
@@ -83,12 +82,13 @@ async def create_transport_node(node_data: NodeCreate, db: AsyncSession = Depend
         raise HTTPException(409, "Node exists")
 
     # async geocoding
-    geo = await geocode_async(node_data.name)
-    if not geo:
-        raise HTTPException(404, "Не найдено место")
+    if not node_data.latitude and not node_data.longitude:
+        geo = await geocode_async(node_data.name)
+        if not geo:
+            raise HTTPException(404, f"Target location: {node_data.name} not found")
 
-    node_data.latitude = float(geo["lat"])
-    node_data.longitude = float(geo["lon"])
+        node_data.latitude = float(geo["lat"])
+        node_data.longitude = float(geo["lon"])
 
     new_node = Node(**node_data.model_dump())
     db.add(new_node)

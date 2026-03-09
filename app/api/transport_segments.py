@@ -179,7 +179,7 @@ async def create_transport_segment(
     """
     Create a new transport segment.
 
-    All four metric fields are **optional** — if omitted, they are auto-calculated:
+    All three metric fields are **optional** — if omitted, they are auto-calculated:
     - `distance_km` → from node coordinates (Haversine / OSRM / rail detour)
     - `co2_kg` → `CO2_PER_KM[mode] × distance_km`
     - `comfort_score` → `COMFORT_SCORE[mode]`
