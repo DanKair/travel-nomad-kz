@@ -4,7 +4,7 @@ Pydantic Schemas for Request/Response Validation
 All schemas use Pydantic v2 with model_config for ORM mode.
 Schemas are organized by domain entity.
 """
-
+from decimal import Decimal
 from typing import Optional, List
 from pydantic import BaseModel, Field, ConfigDict
 from app.enums import TransportMode, NodeType, AccessType
@@ -337,3 +337,25 @@ class RouteResponse(BaseModel):
     optimization_score: float
     
     model_config = ConfigDict(from_attributes=True)
+
+# =============================================================================
+# DATA MANAGEMENT SCHEMAS
+# =============================================================================
+
+class DataUpdateResult(BaseModel):
+    """Schema for individual segment update result."""
+    segment_id: int
+    success: bool
+    old_cost: Decimal
+    new_cost: Decimal
+    old_time_minutes: int
+    new_time_minutes: int
+    source: str
+    error: Optional[str] = None
+
+
+class DataUpdateBatchResponse(BaseModel):
+    """Response schema for batch segment updates."""
+    updated_count: int
+    failed_count: int
+    results: List[DataUpdateResult]
