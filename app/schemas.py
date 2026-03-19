@@ -104,7 +104,7 @@ class TransportSegmentBase(BaseModel):
     to_node_id: int = Field(..., description="Destination node ID")
     transport_mode: TransportMode = Field(..., description="Transportation mode")
     time_minutes: int = Field(..., gt=0, description="Travel time in minutes.")
-    cost: float = Field(..., ge=0, description="Cost in KZT (Kazakhstan Tenge)")
+    cost: Decimal = Field(..., ge=0, description="Cost in KZT (Kazakhstan Tenge)")
     distance_km: Optional[float] = Field(
         None, gt=0,
         description="Distance in km. Leave blank to auto-calculate from node coordinates."
@@ -127,7 +127,7 @@ class SegmentEstimateRequest(BaseModel):
     """Request schema for the dry-run /estimate endpoint."""
     from_node_id: int = Field(..., description="Origin node ID")
     to_node_id: int = Field(..., description="Destination node ID")
-    cost: float = Field(..., ge=0, description="Cost in KZT (Kazakhstan Tenge)")
+    cost: Decimal = Field(..., ge=0, description="Cost in KZT (Kazakhstan Tenge)")
     transport_mode: TransportMode = Field(..., description="Transportation mode to estimate for")
 
 
@@ -147,7 +147,7 @@ class TransportSegmentUpdate(BaseModel):
 
     distance_km: Optional[float] = Field(None, gt=0)
     time_minutes: Optional[int] = Field(None, gt=0)
-    cost: Optional[float] = Field(None, ge=0)
+    cost: Optional[Decimal] = Field(None, ge=0)
 
     comfort_score: Optional[float] = Field(None, ge=1, le=10)
     co2_kg: Optional[float] = Field(None, ge=0)
@@ -226,7 +226,7 @@ class PointNodeBase(BaseModel):
     access_type: AccessType = Field(..., description="Last-mile access type")
     distance_km: float = Field(..., gt=0, description="Last-mile distance in km")
     time_minutes: int = Field(..., gt=0, description="Last-mile time in minutes")
-    cost: float = Field(0.0, ge=0, description="Last-mile cost in KZT")
+    cost: Decimal  = Field(0.0, ge=0, description="Last-mile cost in KZT")
     comfort_score: Optional[float] = Field(None, ge=1, le=10, description="Last-mile comfort score")
     co2_kg: Optional[float] = Field(None, ge=0, description="Last-mile CO2 in kg")
     description: Optional[str] = Field(None, description="Access instructions")
@@ -282,7 +282,7 @@ class RouteSegmentStep(BaseModel):
     transport_mode: TransportMode
     distance_km: float
     time_minutes: int
-    cost: float
+    cost: Decimal
     comfort_score: float
     co2_kg: float
 
@@ -301,7 +301,7 @@ class LastMileAccess(BaseModel):
     access_type: AccessType
     distance_km: float
     time_minutes: int
-    cost: float
+    cost: Decimal
     comfort_score: float
     co2_kg: float
     description: Optional[str]
@@ -329,7 +329,7 @@ class RouteResponse(BaseModel):
     # Totals (including last mile)
     total_distance_km: float
     total_time_minutes: int
-    total_cost: float
+    total_cost: Decimal
     total_co2_kg: float
     average_comfort: float
     

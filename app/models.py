@@ -11,7 +11,8 @@ All models use SQLAlchemy 2.x Mapped types for type safety.
 
 from typing import List, Optional
 from slugify import slugify
-from sqlalchemy import String, Float, Integer, ForeignKey, Text, Enum as SQLEnum, event
+from sqlalchemy import (String, Float, Integer, ForeignKey, Text, Enum as SQLEnum,
+                        event, UniqueConstraint, CheckConstraint, Index, Numeric)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 from app.enums import TransportMode, NodeType, AccessType
@@ -186,6 +187,24 @@ class TransportSegment(Base):
     - Links two nodes (from → to)
     """
     __tablename__ = "transport_segments"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "from_node_id",
+            "to_node_id",
+            "transport_mode",
+            name="uq_transport_segment"
+        ),
+        CheckConstraint(
+            "from_node_id != to_node_id",
+            name="check_no_self_loop"
+        ),
+        Index(
+            "idx_segment_from_mode",
+            "from_node_id",
+            "transport_mode"
+        ),
+    )
     
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     
@@ -210,7 +229,7 @@ class TransportSegment(Base):
     # Multi-criteria metrics for Pareto optimization
     distance_km: Mapped[float] = mapped_column(Float, nullable=False)
     time_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
-    cost: Mapped[float] = mapped_column(Float, nullable=False)  # In KZT (Tenge)
+    cost: Mapped[float] = mapped_column(Numeric(10,2 ), nullable=False)  # In KZT (Tenge)
     comfort_score: Mapped[float] = mapped_column(Float, default=5.0)  # 1-10 scale
     co2_kg: Mapped[float] = mapped_column(Float, default=0.0)  # CO2 emissions in kg
     
@@ -368,7 +387,7 @@ class PointNode(Base):
     # Last-mile metrics
     distance_km: Mapped[float] = mapped_column(Float, nullable=False)
     time_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
-    cost: Mapped[float] = mapped_column(Float, default=0.0)  # In KZT
+    cost: Mapped[float] = mapped_column(Numeric(10, 2), default=0.0)  # In KZT
     comfort_score: Mapped[float] = mapped_column(Float, default=5.0)  # 1-10 scale
     co2_kg: Mapped[float] = mapped_column(Float, default=0.0)  # CO2 emissions in kg
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
