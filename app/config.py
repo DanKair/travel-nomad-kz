@@ -4,7 +4,7 @@ Uses Pydantic Settings for environment-based configuration.
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional
+from typing import List, Optional
 
 class Settings(BaseSettings):
     """
@@ -26,8 +26,14 @@ class Settings(BaseSettings):
     # Application settings
     app_name: str = "Nomad Travel KZ"
     app_version: str = "1.0.0"
-    debug: bool = True
+    DEBUG: bool = False  # Set DEBUG=True in .env for local dev only
     root_path: str = ""  # Used when hosting behind a proxy (like Nginx)
+
+    # CORS — comma-separated list of allowed origins.
+    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:80"]
+    
+    # Redis configuration
+    REDIS_URL: str = "redis://localhost:6379/0"  # Overridden by docker-compose
     
     # Routing algorithm default weights (can be overridden in API requests)
     # These control the importance of each criterion in route calculation

@@ -10,6 +10,7 @@ All models use SQLAlchemy 2.x Mapped types for type safety.
 """
 
 from typing import List, Optional
+from slugify import slugify
 from sqlalchemy import String, Float, Integer, ForeignKey, Text, Enum as SQLEnum, event
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
@@ -151,18 +152,19 @@ class Node(Base):
     def __str__(self) -> str:
         return self.name
 
-# Slug Auto-Generation for Node Model
-"""
+
 @event.listens_for(Node, "before_insert")
 def generate_node_slug(mapper, connection, target: Node):
+    """Auto-generate slug from name when creating a Node without a slug."""
     if not target.slug:
         target.slug = slugify(target.name)
 
 @event.listens_for(Node, "before_update")
-def node_before_update(mapper, connection, target: Node):
+def update_node_slug(mapper, connection, target: Node):
+    """Keep slug in sync with name when the Node's name is updated."""
     if target.name:
         target.slug = slugify(target.name)
-"""
+
 
 class TransportSegment(Base):
     """
@@ -304,16 +306,19 @@ class TouristPoint(Base):
     def __str__(self) -> str:
         return self.name
 
-# Slug Auto-Generation for TouristPoint Model
-"""@event.listens_for(TouristPoint, "before_insert")
-def generate_tourist_point_slug(mapper, connection, target):
+
+@event.listens_for(TouristPoint, "before_insert")
+def generate_tourist_point_slug(mapper, connection, target: TouristPoint):
+    """Auto-generate slug from name when creating a TouristPoint without a slug."""
     if not target.slug:
         target.slug = slugify(target.name)
 
 @event.listens_for(TouristPoint, "before_update")
-def tourist_point_before_update(mapper, connection, target: TouristPoint):
+def update_tourist_point_slug(mapper, connection, target: TouristPoint):
+    """Keep slug in sync with name when the TouristPoint's name is updated."""
     if target.name:
-        target.slug = slugify(target.name)"""
+        target.slug = slugify(target.name)
+
 
 
 class PointNode(Base):
@@ -364,6 +369,8 @@ class PointNode(Base):
     distance_km: Mapped[float] = mapped_column(Float, nullable=False)
     time_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     cost: Mapped[float] = mapped_column(Float, default=0.0)  # In KZT
+    comfort_score: Mapped[float] = mapped_column(Float, default=5.0)  # 1-10 scale
+    co2_kg: Mapped[float] = mapped_column(Float, default=0.0)  # CO2 emissions in kg
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     
     # Relationships

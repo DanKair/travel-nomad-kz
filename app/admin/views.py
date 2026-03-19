@@ -54,7 +54,7 @@ class TouristPointAdmin(ModelView, model=TouristPoint):
 class PointNodeAdmin(ModelView, model=PointNode):
     name = "Point Node"
     name_plural = "Point Nodes"
-    column_list = ["id", "tourist_point", "node", "access_type"]
+    column_list = ["id", "tourist_point", "node", "access_type", "comfort_score", "co2_kg"]
     column_select_related_list = ["tourist_point", "node"]
     icon = "fa-solid fa-person-walking"
 

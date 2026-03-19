@@ -132,6 +132,12 @@ async def get_transport_segments(
     to_node_name: Optional[str] = Query(
         None, description="Partial destination name search. E.g. 'shym' → Shymkent"
     ),
+    limit: Optional[int] = Query(
+        None, description="Limit the number of results"
+    ),
+    offset: Optional[int] = Query(
+        None, description="Offset the results"
+    ),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -156,6 +162,11 @@ async def get_transport_segments(
         DestNode = aliased(Node, name="dest_node")
         query = query.join(DestNode, TransportSegment.to_node_id == DestNode.id)
         query = query.filter(DestNode.name.ilike(f"%{to_node_name}%"))
+
+    if limit:
+        query = query.limit(limit)
+    if offset:
+        query = query.offset(offset)
 
     result = await db.execute(query)
     return result.scalars().all()

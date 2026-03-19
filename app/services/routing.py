@@ -540,12 +540,23 @@ class RoutingService:
         Returns:
             Normalized score for last-mile access
         """
-        # Look up CO2 and comfort from constants based on access_type
-        co2_per_km = CO2_PER_KM_ACCESS.get(point_node.access_type, 0.1)
-        co2 = round(co2_per_km * point_node.distance_km, 3)
+        # Use metrics from model if they are non-zero (meaning they were manually set)
+        # Otherwise fallback to distance-based calculation from constants
+        if point_node.co2_kg > 0:
+            co2 = point_node.co2_kg
+        else:
+            co2_per_km = CO2_PER_KM_ACCESS.get(point_node.access_type, 0.1)
+            co2 = round(co2_per_km * point_node.distance_km, 3)
 
-        comfort_score = COMFORT_SCORE_ACCESS.get(point_node.access_type, 5.0)
-        comfort_penalty = 10 - comfort_score
+        # For comfort, if it's the default 5.0 and our constants have a different value,
+        # we fallback to the constant.
+        constant_comfort = COMFORT_SCORE_ACCESS.get(point_node.access_type, 5.0)
+        if point_node.comfort_score == 5.0 and constant_comfort != 5.0:
+            comfort_val = constant_comfort
+        else:
+            comfort_val = point_node.comfort_score
+
+        comfort_penalty = 10 - comfort_val
         
         return self._calculate_combined_score(
             time=point_node.time_minutes,
@@ -609,6 +620,8 @@ class RoutingService:
             distance_km=point_node.distance_km,
             time_minutes=point_node.time_minutes,
             cost=point_node.cost,
+            comfort_score=point_node.comfort_score,
+            co2_kg=point_node.co2_kg,
             description=point_node.description
         )
         
@@ -616,7 +629,13 @@ class RoutingService:
         total_distance = route_data['total_distance'] + point_node.distance_km
         total_time = route_data['total_time'] + point_node.time_minutes
         total_cost = route_data['total_cost'] + point_node.cost
-        total_co2 = route_data['total_co2']
+        total_co2 = route_data['total_co2'] + point_node.co2_kg
+        
+        # Recalculate average comfort including last mile
+        # (Weight by proportion of segments + 1 for last mile)
+        num_steps = len(route_steps)
+        total_comfort_weighted = (route_data['average_comfort'] * num_steps) + point_node.comfort_score
+        avg_comfort = total_comfort_weighted / (num_steps + 1)
         
         return RouteResponse(
             from_node=from_node_slug,
@@ -627,6 +646,6 @@ class RoutingService:
             total_time_minutes=total_time,
             total_cost=round(total_cost, 2),
             total_co2_kg=round(total_co2, 2),
-            average_comfort=round(route_data['average_comfort'], 2),
+            average_comfort=round(avg_comfort, 2),
             optimization_score=round(total_score, 4)
         )

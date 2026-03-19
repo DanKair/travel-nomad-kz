@@ -15,13 +15,23 @@ from app.config import settings
 
 
 # Create SQLAlchemy engine
-# For SQLite: check_same_thread=False allows FastAPI to use the same connection across threads
-# For production PostgreSQL, you'd use a connection pool instead
-engine = create_async_engine(
-    settings.DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {},
-    echo=settings.debug  # Log SQL queries in debug mode
-)
+# For production PostgreSQL, we use a connection pool to manage concurrent requests
+engine_args = {
+    "echo": settings.DEBUG,
+}
+
+if "sqlite" in settings.DATABASE_URL:
+    engine_args["connect_args"] = {"check_same_thread": False}
+else:
+    # Production PostgreSQL pooling settings
+    engine_args.update({
+        "pool_size": 10,          # Standard number of persistent connections to keep open
+        "max_overflow": 20,       # Max additional connections to create during traffic spikes
+        "pool_pre_ping": True,    # Verifies connection is alive before using it (prevents "server closed connection" errors)
+        "pool_recycle": 1800,     # Recycle connections every 30 mins to avoid stale connections
+    })
+
+engine = create_async_engine(settings.DATABASE_URL, **engine_args)
 
 # Session factory for creating database sessions
 SessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine)

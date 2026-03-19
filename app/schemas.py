@@ -227,6 +227,8 @@ class PointNodeBase(BaseModel):
     distance_km: float = Field(..., gt=0, description="Last-mile distance in km")
     time_minutes: int = Field(..., gt=0, description="Last-mile time in minutes")
     cost: float = Field(0.0, ge=0, description="Last-mile cost in KZT")
+    comfort_score: Optional[float] = Field(None, ge=1, le=10, description="Last-mile comfort score")
+    co2_kg: Optional[float] = Field(None, ge=0, description="Last-mile CO2 in kg")
     description: Optional[str] = Field(None, description="Access instructions")
 
 
@@ -300,6 +302,8 @@ class LastMileAccess(BaseModel):
     distance_km: float
     time_minutes: int
     cost: float
+    comfort_score: float
+    co2_kg: float
     description: Optional[str]
 
 

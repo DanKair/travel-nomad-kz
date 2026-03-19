@@ -66,6 +66,10 @@ Frontend will run on: **http://localhost:5173** or **http://localhost:5174**
      - Last-mile access (taxi, walking, car)
      - Total time, cost, distance, and comfort score
 
+## Backup your data
+**Run:**
+`docker exec travel-nomad-kz-db sh -lc 'pg_dump -U postgres -d nomad_travel_test -f /backups/backup.sql'`
+
 ## 🔧 Troubleshooting
 
 ### "npm run dev" Error in Root Directory

@@ -10,12 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.schemas import RouteResponse
 from app.services.routing import RoutingService
+from fastapi_cache.decorator import cache
 
 
 router = APIRouter(prefix="/routes", tags=["Routing"])
 
 
 @router.get("", response_model=RouteResponse)
+@cache(expire=3600)  # Cache for 1 hour
 async def calculate_route(
     from_node: str = Query(..., description="Starting node slug (e.g., 'almaty')"),
     to_tourist_point: str = Query(..., description="Destination tourist point slug (e.g., 'charyn-canyon')"),
@@ -23,7 +25,8 @@ async def calculate_route(
     cost_weight: Optional[float] = Query(None, ge=0, le=1, description="Cost importance (0-1)"),
     comfort_weight: Optional[float] = Query(None, ge=0, le=1, description="Comfort importance (0-1)"),
     co2_weight: Optional[float] = Query(None, ge=0, le=1, description="CO2 importance (0-1)"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    redis: RedisBackend = Depends(get_redis)
 ):
     """
     Calculate optimal route from a node to a tourist point.
@@ -65,6 +68,11 @@ async def calculate_route(
         GET /routes?from_node=almaty&to_tourist_point=mausoleum-yasawi&time_weight=0.6&cost_weight=0.4
     """
     try:
+        # Check cache first
+        redis_value = redis.get(f"route:{from_node}:{to_tourist_point}")
+
+        if redis_value:
+            return redis_value
         # Create routing service
         routing_service = RoutingService(db)
         
@@ -78,6 +86,8 @@ async def calculate_route(
             co2_weight=co2_weight
         )
         
+        # Save to cache
+        redis.set(f"route:{from_node}:{to_tourist_point}", route, ex=3600)
         return route
     
     except ValueError as e:
