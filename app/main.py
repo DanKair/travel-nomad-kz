@@ -9,9 +9,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import logging
-import redis.asyncio as redis
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
+from app.redis import get_redis_client, close_redis
 from app.config import settings
 from app.database import init_db, engine
 from app.api import regions, tourist_points, routing, tourist_point_categories, point_nodes, transport_segments, nodes
@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI):
     print("✅ Database initialized")
     
     # Initialize Redis Cache
-    redis_client = redis.from_url(settings.REDIS_URL, encoding="utf8", decode_responses=True)
+    redis_client = get_redis_client()
     FastAPICache.init(RedisBackend(redis_client), prefix="fastapi-cache")
     print("✅ Redis Caching initialized")
 
@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI):
     
     # Shutdown (cleanup if needed)
     print("👋 Shutting down...")
-    await redis_client.close()
+    await close_redis()
 
 
 # Create FastAPI application
