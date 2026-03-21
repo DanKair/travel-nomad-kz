@@ -3,20 +3,21 @@ Kazakhstan Tourism Routing API - Main Application
 
 FastAPI application entry point with all routers and lifespan events.
 """
-
+import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-import logging
+from starlette.middleware.sessions import SessionMiddleware
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
 from app.redis import get_redis_client, close_redis
-from app.config import settings
-from app.database import init_db, engine
+from app.core.config import settings
+from app.core.database import init_db, engine
 from app.api import regions, tourist_points, routing, tourist_point_categories, point_nodes, transport_segments, nodes
 from sqladmin import Admin
 from app.admin.views import admin_views
+from app.admin.auth import admin_auth
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +92,11 @@ app.add_middleware(
     allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=False,  # Set True only if using session cookies
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-API-Key"],
 )
+
+# Sesion management for Admin Panel
+app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
 
 # Register routers with /api prefix
 app.include_router(regions.router, prefix="/api")
@@ -103,10 +107,14 @@ app.include_router(nodes.router, prefix="/api")
 app.include_router(transport_segments.router, prefix="/api")
 app.include_router(point_nodes.router, prefix="/api")
 
-# Setup SQLAdmin
-admin = Admin(app, engine)
-for view in admin_views:
-    admin.add_view(view)
+# Setup SQLAdmin (Toggleable)
+if settings.ENABLE_ADMIN:
+    admin = Admin(app, engine, authentication_backend=admin_auth)
+    for view in admin_views:
+        admin.add_view(view)
+    print("✅ SQLAdmin Panel enabled at /admin")
+else:
+    print("🔒 SQLAdmin Panel is disabled")
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):

@@ -8,9 +8,10 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from app.database import get_db
+from app.core.database import get_db
 from app.models import Region
 from app.schemas import RegionCreate, RegionUpdate, RegionResponse
+from app.core.auth import require_api_key
 
 
 router = APIRouter(prefix="/regions", tags=["Regions"])
@@ -53,7 +54,10 @@ async def get_region(region_id: int, db: AsyncSession = Depends(get_db)):
     return region
 
 
-@router.post("", response_model=RegionResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", 
+             response_model=RegionResponse, 
+             status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_api_key)])
 async def create_region(region_data: RegionCreate, db: AsyncSession = Depends(get_db)):
     """
     Create a new region.
@@ -84,7 +88,9 @@ async def create_region(region_data: RegionCreate, db: AsyncSession = Depends(ge
     return region
 
 
-@router.patch("/{region_id}", response_model=RegionResponse)
+@router.patch("/{region_id}", 
+              response_model=RegionResponse,
+              dependencies=[Depends(require_api_key)])
 async def update_region(
     region_id: int,
     region_data: RegionUpdate,
@@ -120,7 +126,9 @@ async def update_region(
     await db.refresh(region)
     return region
 
-@router.delete("/regions/{region_id}", response_model=str)
+@router.delete("/{region_id}", 
+               status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[Depends(require_api_key)])
 async def delete_region(region_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Region).filter(Region.id == region_id))
     target_region = result.scalars().first()

@@ -16,13 +16,13 @@ ESTIMATE ENDPOINT:
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.constants import CO2_PER_KM, COMFORT_SCORE
-from app.database import get_db
+from app.core.database import get_db
 from app.enums import TransportMode
 from app.models import TransportSegment, Node
 from app.schemas import (
@@ -32,6 +32,7 @@ from app.schemas import (
     SegmentEstimateRequest,
     SegmentEstimateResponse,
 )
+from app.core.auth import require_api_key
 from app.services.distance import estimate_distance, _AIR_MODES, _ROAD_MODES
 
 router = APIRouter(prefix="/transport-segments", tags=["Transport Segments"])
@@ -182,8 +183,11 @@ async def get_transport_segment(segment_id: int, db: AsyncSession = Depends(get_
     return segment
 
 
-@router.post("", response_model=TransportSegmentResponse, status_code=201)
-async def create_transport_segment(
+@router.post("",
+             response_model=TransportSegmentResponse,
+             status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_api_key)])
+async def create_segment(
     segment_data: TransportSegmentCreate,
     db: AsyncSession = Depends(get_db)
 ):
@@ -221,8 +225,10 @@ async def create_transport_segment(
     return new_segment
 
 
-@router.put("/{segment_id}", response_model=TransportSegmentResponse)
-async def update_transport_segment(
+@router.put("/{segment_id}",
+            response_model=TransportSegmentResponse,
+            dependencies=[Depends(require_api_key)])
+async def update_segment(
     segment_id: int,
     segment_data: TransportSegmentUpdate,
     db: AsyncSession = Depends(get_db)
@@ -254,8 +260,10 @@ async def update_transport_segment(
     return segment
 
 
-@router.delete("/{segment_id}", status_code=204)
-async def delete_transport_segment(segment_id: int, db: AsyncSession = Depends(get_db)):
+@router.delete("/{segment_id}",
+               status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[Depends(require_api_key)])
+async def delete_segment(segment_id: int, db: AsyncSession = Depends(get_db)):
     """Delete a transport segment."""
     result = await db.execute(select(TransportSegment).filter(TransportSegment.id == segment_id))
     segment = result.scalars().first()

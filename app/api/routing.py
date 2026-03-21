@@ -7,7 +7,7 @@ Main endpoint for calculating optimal routes from nodes to tourist points.
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.database import get_db
+from app.core.database import get_db
 from app.schemas import RouteResponse
 from app.services.routing import RoutingService
 from fastapi_cache.decorator import cache

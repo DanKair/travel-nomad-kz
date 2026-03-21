@@ -26,7 +26,13 @@ class Settings(BaseSettings):
     # Application settings
     app_name: str = "Nomad Travel KZ"
     app_version: str = "1.0.0"
+    # Security settings
     DEBUG: bool = False  # Set DEBUG=True in .env for local dev only
+    SECRET_KEY: str = "change_me_in_production"
+    TEAM_API_KEY: str = "dev_team_key"
+    ENABLE_ADMIN: bool = False
+    ALLOWED_ADMIN_IPS: List[str] = ["127.0.0.1", "localhost"]
+    
     root_path: str = ""  # Used when hosting behind a proxy (like Nginx)
 
     # CORS — comma-separated list of allowed origins.

@@ -51,7 +51,7 @@ from app.schemas import (
     RouteSegmentStep,
     LastMileAccess
 )
-from app.config import settings
+from app.core.config import settings
 from app.constants import CO2_PER_KM_ACCESS, COMFORT_SCORE_ACCESS
 
 

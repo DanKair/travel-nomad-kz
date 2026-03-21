@@ -11,9 +11,10 @@ from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.coordinates import geocode_async
 
-from app.database import get_db
+from app.core.database import get_db
 from app.models import TouristPoint, Region, TouristPointCategory
 from app.schemas import TouristPointCreate, TouristPointUpdate, TouristPointResponse
+from app.core.auth import require_api_key
 
 
 router = APIRouter(prefix="/tourist-points", tags=["Tourist Points"])
@@ -80,30 +81,33 @@ async def get_tourist_point(point_id: int, db: AsyncSession = Depends(get_db)):
     return point
 
 
-@router.post("", response_model=TouristPointResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", 
+             response_model=TouristPointResponse, 
+             status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_api_key)])
 async def create_tourist_point(
-    point_data: TouristPointCreate,
+    tp_data: TouristPointCreate,
     db: AsyncSession = Depends(get_db)
 ):
     # Creating slug if missing
-    if not point_data.slug:
-        point_data.slug = slugify(point_data.name)
+    if not tp_data.slug:
+        tp_data.slug = slugify(tp_data.name)
 
     # Check if exists
-    result = await db.execute(select(TouristPoint).filter(TouristPoint.slug == point_data.slug))
+    result = await db.execute(select(TouristPoint).filter(TouristPoint.slug == tp_data.slug))
     if result.scalars().first():
         raise HTTPException(status_code=400, detail="Point already exists")
 
     # Auto-geocode
-    if point_data.latitude is None or point_data.longitude is None:
-        location = await geocode_async(point_data.name)
+    if tp_data.latitude is None or tp_data.longitude is None:
+        location = await geocode_async(tp_data.name)
         if not location:
             raise HTTPException(status_code=404, detail="Cannot find coords")
-        point_data.latitude = float(location["lat"])
-        point_data.longitude = float(location["lon"])
+        tp_data.latitude = float(location["lat"])
+        tp_data.longitude = float(location["lon"])
 
     # Create and commit
-    point = TouristPoint(**point_data.model_dump())
+    point = TouristPoint(**tp_data.model_dump())
     db.add(point)
     await db.commit()
 
@@ -122,7 +126,9 @@ async def create_tourist_point(
 
     return created_point
 
-@router.patch("/{point_id}", response_model=TouristPointResponse)
+@router.put("/{point_id}", 
+            response_model=TouristPointResponse,
+            dependencies=[Depends(require_api_key)])
 async def update_tourist_point(
     point_id: int,
     point_data: TouristPointUpdate,
@@ -187,7 +193,9 @@ async def update_tourist_point(
     await db.refresh(point)
     return point
 
-@router.delete("/{point_id}", response_model=str)
+@router.delete("/{point_id}", 
+               response_model=str,
+               dependencies=[Depends(require_api_key)])
 async def delete_tourist_point(
     point_id: int,
     db: AsyncSession = Depends(get_db)

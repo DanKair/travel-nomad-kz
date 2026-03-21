@@ -1,6 +1,6 @@
 import redis.asyncio as redis
 from typing import AsyncGenerator
-from app.config import settings
+from app.core.config import settings
 
 # Global redis client instance
 _redis_client: redis.Redis | None = None

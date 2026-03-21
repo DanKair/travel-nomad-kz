@@ -7,13 +7,14 @@ This API allows you to configure how tourists reach destinations from transporta
 
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.database import get_db
+from app.core.database import get_db
 from app.models import PointNode
 from app.schemas import PointNodeResponse, PointNodeCreate
+from app.core.auth import require_api_key
 
 router = APIRouter(prefix="/point-nodes", tags=["Point Nodes (Last-Mile Access)"])
 
@@ -49,7 +50,10 @@ async def get_point_node(point_node_id: int, db: AsyncSession = Depends(get_db))
         raise HTTPException(status_code=404, detail="Point node not found")
     return point_node
 
-@router.post("", response_model=PointNodeResponse, status_code=201)
+@router.post("", 
+             response_model=PointNodeResponse, 
+             status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_api_key)])
 async def create_point_node(point_node_data: PointNodeCreate, db: AsyncSession = Depends(get_db)):
     """
     Create a new point node (last-mile access).
@@ -63,7 +67,9 @@ async def create_point_node(point_node_data: PointNodeCreate, db: AsyncSession =
     await db.refresh(new_point_node)
     return new_point_node
 
-@router.put("/{point_node_id}", response_model=PointNodeResponse)
+@router.put("/{point_node_id}", 
+            response_model=PointNodeResponse,
+            dependencies=[Depends(require_api_key)])
 async def update_point_node(point_node_id: int, point_node_data: PointNodeCreate, db: AsyncSession = Depends(get_db)):
     """Update an existing point node."""
     result = await db.execute(select(PointNode).filter(PointNode.id == point_node_id))
@@ -80,7 +86,9 @@ async def update_point_node(point_node_id: int, point_node_data: PointNodeCreate
     await db.refresh(point_node)
     return point_node
 
-@router.delete("/{point_node_id}", status_code=204)
+@router.delete("/{point_node_id}", 
+               status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[Depends(require_api_key)])
 async def delete_point_node(point_node_id: int, db: AsyncSession = Depends(get_db)):
     """Delete a point node."""
     result = await db.execute(select(PointNode).filter(PointNode.id == point_node_id))

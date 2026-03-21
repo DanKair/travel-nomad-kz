@@ -12,9 +12,9 @@ All models use SQLAlchemy 2.x Mapped types for type safety.
 from typing import List, Optional
 from slugify import slugify
 from sqlalchemy import (String, Float, Integer, ForeignKey, Text, Enum as SQLEnum,
-                        event, UniqueConstraint, CheckConstraint, Index, Numeric)
+                        event, UniqueConstraint, CheckConstraint, Index, Numeric, Boolean)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from app.database import Base
+from app.core.database import Base
 from app.enums import TransportMode, NodeType, AccessType
 
 
@@ -409,3 +409,17 @@ class PointNode(Base):
     
     def __str__(self) -> str:
         return f"{self.access_type}: Point {self.tourist_point_id} from Node {self.node_id}"
+
+
+class AdminUser(Base):
+    """
+    Model for storing administrative users who can access the /admin panel.
+    """
+    __tablename__ = "admin_users"
+    
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    username: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String(200), nullable=False)
+    
+    def __repr__(self) -> str:
+        return f"<AdminUser(id={self.id}, username='{self.username}')>"

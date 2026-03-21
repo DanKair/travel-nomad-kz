@@ -6,18 +6,18 @@ Supports filtering by node_type and name search to avoid having to memorize IDs.
 """
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.params import Depends
 
 from slugify import slugify
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.database import get_db
+from app.core.database import get_db
 from app.enums import NodeType
 from app.models import Node
 from app.schemas import NodeResponse, NodeCreate, NodeUpdate
-from app.config import settings
+from app.core.auth import require_api_key
 from app.services.coordinates import geocode_async
 
 router = APIRouter(prefix="/transport-nodes", tags=["Transport Nodes"])
@@ -70,8 +70,11 @@ async def get_node_by_id(node_id: int, db: AsyncSession = Depends(get_db)):
 
 
 
-@router.post("", response_model=NodeResponse, status_code=201)
-async def create_transport_node(node_data: NodeCreate, db: AsyncSession = Depends(get_db)):
+@router.post("",
+             response_model=NodeResponse,
+             status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_api_key)])
+async def create_node(node_data: NodeCreate, db: AsyncSession = Depends(get_db)):
     # Creates slug if slug field isn't provided
     if not node_data.slug:
         node_data.slug = slugify(node_data.name)
@@ -96,8 +99,10 @@ async def create_transport_node(node_data: NodeCreate, db: AsyncSession = Depend
     await db.refresh(new_node)
     return new_node
 
-@router.patch("/{node_id}", response_model=NodeResponse)
-async def update_node_data(node_id: int, node_data: NodeUpdate, db: AsyncSession = Depends(get_db)):
+@router.patch("/{node_id}",
+              response_model=NodeResponse,
+              dependencies=[Depends(require_api_key)])
+async def update_node(node_id: int, node_data: NodeUpdate, db: AsyncSession = Depends(get_db)):
     """Partially update a node (only provided fields are changed)."""
     result = await db.execute(select(Node).filter(Node.id == node_id))
     node = result.scalars().first()
@@ -112,8 +117,10 @@ async def update_node_data(node_id: int, node_data: NodeUpdate, db: AsyncSession
     return node
 
 
-@router.delete("/{node_id}", status_code=204)
-async def delete_node_by_id(node_id: int, db: AsyncSession = Depends(get_db)):
+@router.delete("/{node_id}",
+               status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[Depends(require_api_key)])
+async def delete_node(node_id: int, db: AsyncSession = Depends(get_db)):
     """Delete a node by its ID."""
     result = await db.execute(select(Node).filter(Node.id == node_id))
     node = result.scalars().first()
