@@ -1,0 +1,72 @@
+services:
+  # ── PostgreSQL 17 ─────────────────────────────────────────────────────────
+  db:
+    image: postgres:17-alpine
+    container_name: travel-nomad-kz-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups
+    # No ports published in prod for security
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: travel-nomad-kz-redis
+    # No ports published in prod for security
+    restart: unless-stopped
+    networks:
+      - backend
+
+  # ── FastAPI Backend ────────────────────────────────────────────────────────
+  app:
+    container_name: travel-nomad-kz-backend
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      POSTGRES_SERVER: db
+      REDIS_URL: "redis://redis:6379/0"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - backend
+      - frontend_net
+
+  # ── React Frontend via nginx ───────────────────────────────────────────────
+  frontend:
+    container_name: travel-nomad-kz-frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - frontend_net
+
+networks:
+  backend:
+    internal: true
+  frontend_net:
+
+volumes:
+  postgres_data:
