@@ -224,9 +224,9 @@ class PointNodeBase(BaseModel):
     tourist_point_id: int = Field(..., description="Tourist point ID")
     node_id: int = Field(..., description="Node ID")
     access_type: AccessType = Field(..., description="Last-mile access type")
-    distance_km: float = Field(..., gt=0, description="Last-mile distance in km")
-    time_minutes: int = Field(..., gt=0, description="Last-mile time in minutes")
-    cost: Decimal  = Field(0.0, ge=0, description="Last-mile cost in KZT")
+    distance_km: Optional[float] = Field(None, gt=0, description="Last-mile distance in km")
+    time_minutes: Optional[int] = Field(None, gt=0, description="Last-mile time in minutes")
+    cost: Decimal  = Field(Decimal("0.0"), ge=0, description="Last-mile cost in KZT")
     comfort_score: Optional[float] = Field(None, ge=1, le=10, description="Last-mile comfort score")
     co2_kg: Optional[float] = Field(None, ge=0, description="Last-mile CO2 in kg")
     description: Optional[str] = Field(None, description="Access instructions")
@@ -235,6 +235,24 @@ class PointNodeBase(BaseModel):
 class PointNodeCreate(PointNodeBase):
     """Schema for creating a new point node."""
     pass
+
+
+class PointNodeEstimateRequest(BaseModel):
+    """Request schema for dry-run point node estimation."""
+    tourist_point_id: int = Field(..., description="Tourist point ID")
+    node_id: int = Field(..., description="Node ID")
+    access_type: AccessType = Field(..., description="Last-mile access type")
+    cost: Decimal = Field(0.0, ge=0, description="Estimated cost in KZT")
+
+
+class PointNodeEstimateResponse(BaseModel):
+    """Response schema for point node estimation."""
+    access_type: AccessType
+    distance_km: float
+    time_minutes: int
+    co2_kg: float
+    comfort_score: float
+    distance_strategy: str
 
 
 class PointNodeResponse(PointNodeBase):

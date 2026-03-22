@@ -25,14 +25,15 @@ OSRM SETUP:
 
 import math
 import logging
+from typing import Union
 import httpx
 
-from app.enums import TransportMode
+from app.enums import TransportMode, AccessType
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Configuration — swap OSRM_BASE_URL via env var in production
+# Configuration
 # ---------------------------------------------------------------------------
 OSRM_BASE_URL = "http://router.project-osrm.org/route/v1/driving"
 OSRM_TIMEOUT_S = 5.0
@@ -41,10 +42,12 @@ OSRM_TIMEOUT_S = 5.0
 _RAIL_DETOUR_FACTOR = 1.20
 
 # Modes that travel on real road networks → use OSRM
-_ROAD_MODES = {TransportMode.CAR, TransportMode.BUS, TransportMode.TAXI, TransportMode.MARSHRUTKA}
+_ROAD_MODES = {
+    TransportMode.CAR, TransportMode.BUS, TransportMode.TAXI, TransportMode.MARSHRUTKA,
+    AccessType.CAR, AccessType.TAXI, AccessType.BUS, AccessType.SHUTTLE
+}
 # Modes that travel as-the-crow-flies → use Haversine directly
-_AIR_MODES  = {TransportMode.PLANE, TransportMode.CABLE_CAR}
-# TRAIN → Haversine × detour factor (everything else falls here too)
+_AIR_MODES  = {TransportMode.PLANE, TransportMode.CABLE_CAR, AccessType.WALK}
 
 
 # =============================================================================
@@ -54,8 +57,6 @@ _AIR_MODES  = {TransportMode.PLANE, TransportMode.CABLE_CAR}
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """
     Shortest path over the Earth's surface in km.
-    Correct for PLANE and CABLE_CAR; underestimates for roads and rail.
-    Reference: https://www.movable-type.co.uk/scripts/latlong.html
     """
     R = 6_371.0
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
@@ -72,8 +73,6 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 async def road_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """
     Query OSRM for actual driving distance in km.
-    OSRM uses (longitude, latitude) order — note the swap!
-    Falls back to Haversine × 1.35 if OSRM is unreachable.
     """
     url = f"{OSRM_BASE_URL}/{lon1},{lat1};{lon2},{lat2}"
     try:
@@ -98,15 +97,11 @@ async def road_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -
 async def estimate_distance(
     from_lat: float, from_lon: float,
     to_lat: float,   to_lon: float,
-    mode: TransportMode,
+    mode: Union[TransportMode, AccessType],
 ) -> float:
     """
     Return distance_km between two coordinate pairs using the correct
-    strategy for the given transport mode.
-
-        AIR modes  → Haversine
-        ROAD modes → OSRM (real route), fallback Haversine×1.35
-        TRAIN      → Haversine × 1.20
+    strategy for the given transport mode or access type.
     """
     if mode in _AIR_MODES:
         return haversine_km(from_lat, from_lon, to_lat, to_lon)
@@ -114,5 +109,5 @@ async def estimate_distance(
     if mode in _ROAD_MODES:
         return await road_distance_km(from_lat, from_lon, to_lat, to_lon)
 
-    # TRAIN (and any future land modes not in the sets above)
+    # TRAIN / Default
     return round(haversine_km(from_lat, from_lon, to_lat, to_lon) * _RAIL_DETOUR_FACTOR, 2)

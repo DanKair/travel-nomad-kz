@@ -20,34 +20,42 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 class AdminAuth(AuthenticationBackend):
     async def login(self, request: Request) -> bool:
         """
-        Handles admin login with multiple security layers:
-        1. IP Allowlisting
-        2. Brute-force protection (Redis)
-        3. Database password verification (bcrypt)
+        Handles admin login with multiple security layers.
         """
-        # 1. IP Allowlisting (from .env)
+        logger.info("Admin login attempt started")
+        
+        # 1. IP Allowlisting
         if not is_admin_ip(request):
+            logger.warning("Admin login REJECTED: IP not in allowlist")
             return False
             
-        form = await request.form()
+        try:
+            form = await request.form()
+        except Exception as e:
+            logger.error(f"Error parsing login form: {str(e)}")
+            return False
+            
         username, password = form.get("username"), form.get("password")
         
         if not username or not password:
+            logger.warning("Admin login REJECTED: Missing username or password")
             return False
+
+        logger.info(f"Attempting login for user: {username}")
 
         # 2. Brute-force protection via Redis
         redis = get_redis_client()
-        client_ip = request.client.host
+        client_ip = request.headers.get("X-Forwarded-For", request.client.host).split(",")[0].strip()
         attempts_key = f"admin_login_attempts:{client_ip}"
         
         try:
             # Check if already blocked (3 attempts within 2 mins)
             attempts = await redis.get(attempts_key)
-            if attempts and int(attempts) >= 3:
+            if attempts and int(attempts) >= 5: # Increased to 5 for dev
+                logger.warning(f"Admin login BLOCKED: Too many attempts for IP {client_ip}")
                 return False
         except (redis_exceptions.ConnectionError, redis_exceptions.TimeoutError):
-            logger.warning("Redis is unavailable. Brute-force protection is temporarily disabled.")
-            attempts = None
+            logger.warning("Redis is unavailable. Brute-force protection disabled.")
             
         # 3. Database Check
         async with SessionLocal() as db:
@@ -57,31 +65,39 @@ class AdminAuth(AuthenticationBackend):
             result = await db.execute(select(AdminUser).filter(AdminUser.username == username))
             user = result.scalars().first()
             
-            if not user or not pwd_context.verify(pwd_prehash, user.hashed_password):
-                # Increment failed attempts in Redis
-                try:
-                    await redis.incr(attempts_key)
-                    await redis.expire(attempts_key, 120)  # Block for 2 minutes
-                except (redis_exceptions.ConnectionError, redis_exceptions.TimeoutError):
-                    logger.warning("Redis is unavailable. Cannot increment failed login attempts.")
+            if not user:
+                logger.warning(f"Admin login FAILED: User '{username}' not found")
                 return False
                 
-        # 4. Success: Clear brute-force counter and set session
+            try:
+                if not pwd_context.verify(pwd_prehash, user.hashed_password):
+                    logger.warning(f"Admin login FAILED: Incorrect password for '{username}'")
+                    # Increment failed attempts in Redis
+                    try:
+                        await redis.incr(attempts_key)
+                        await redis.expire(attempts_key, 120)
+                    except:
+                        pass
+                    return False
+            except Exception as e:
+                logger.error(f"Error during password verification for '{username}': {str(e)}")
+                return False
+                
+        # 4. Success
+        logger.info(f"Admin login SUCCESS for user: {username}")
         try:
             await redis.delete(attempts_key)
-        except (redis_exceptions.ConnectionError, redis_exceptions.TimeoutError):
+        except:
             pass
             
         request.session.update({"token": secrets.token_hex(32)})
         return True
 
     async def logout(self, request: Request) -> bool:
-        """Clear admin session."""
         request.session.clear()
         return True
 
     async def authenticate(self, request: Request) -> bool:
-        """Check if session token exists."""
         return "token" in request.session
 
 admin_auth = AdminAuth(secret_key=settings.SECRET_KEY)

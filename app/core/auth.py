@@ -24,13 +24,31 @@ async def require_api_key(api_key: str = Depends(api_key_header)):
         )
     return api_key
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 def is_admin_ip(request: Request) -> bool:
     """Check if the requesting client IP is in the allowed admin list."""
-    client_ip = request.client.host
-    # Accept both direct match and 'localhost' aliases
+    # Handle proxy headers (X-Forwarded-For) if they exist
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        client_ip = forwarded.split(",")[0].strip()
+    else:
+        client_ip = request.client.host
+        
     allowed = settings.ALLOWED_ADMIN_IPS
+    
+    # Debug log for Docker IP verification
+    logger.info(f"Checking admin access for IP: {client_ip} (Allowed: {allowed})")
+    
     if client_ip in allowed:
+        logger.info(f"Access GRANTED for IP: {client_ip}")
         return True
+    
     if "localhost" in allowed and client_ip in ["127.0.0.1", "::1"]:
+        logger.info(f"Access GRANTED (Localhost) for IP: {client_ip}")
         return True
+        
+    logger.warning(f"Access DENIED for IP: {client_ip}")
     return False

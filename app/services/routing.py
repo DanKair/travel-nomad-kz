@@ -137,9 +137,12 @@ class RoutingService:
         # 4. Try routing to each PointNode and pick the best
         best_route = None
         best_score = float('inf')
+        import logging
+        logger = logging.getLogger(__name__)
         
         for point_node in point_nodes:
             try:
+                logger.info(f"Routing from {start_node.id} to PointNode.node_id {point_node.node_id}")
                 # Calculate route from start to the node connected to this PointNode
                 route = await self._dijkstra_multi_criteria(
                     start_node.id,
@@ -155,11 +158,16 @@ class RoutingService:
                     last_mile_score = self._calculate_last_mile_score(point_node, weights)
                     total_score += last_mile_score
                     
+                    logger.info(f"Route found to point_node {point_node.id}, score: {total_score}")
+                    
                     if total_score < best_score:
                         best_score = total_score
                         best_route = (route, point_node)
+                else:
+                    logger.warning(f"No path found to point_node {point_node.id} (node {point_node.node_id})")
             
-            except Exception:
+            except Exception as e:
+                logger.error(f"Error routing to point_node {point_node.id}: {str(e)}", exc_info=True)
                 # If routing to this PointNode fails, try the next one
                 continue
         
@@ -317,7 +325,7 @@ class RoutingService:
                 
                 # Calculate cumulative metrics if we go through this segment
                 new_time = distances[current_node]['time'] + segment.time_minutes
-                new_cost = distances[current_node]['cost'] + segment.cost
+                new_cost = distances[current_node]['cost'] + float(segment.cost)
                 new_distance = distances[current_node]['distance'] + segment.distance_km
                 new_co2 = distances[current_node]['co2'] + segment.co2_kg
                 
@@ -560,7 +568,7 @@ class RoutingService:
         
         return self._calculate_combined_score(
             time=point_node.time_minutes,
-            cost=point_node.cost,
+            cost=float(point_node.cost),
             comfort=comfort_penalty,
             co2=co2,
             weights=weights
@@ -628,7 +636,7 @@ class RoutingService:
         # Calculate totals (main route + last mile)
         total_distance = route_data['total_distance'] + point_node.distance_km
         total_time = route_data['total_time'] + point_node.time_minutes
-        total_cost = route_data['total_cost'] + point_node.cost
+        total_cost = route_data['total_cost'] + float(point_node.cost)
         total_co2 = route_data['total_co2'] + point_node.co2_kg
         
         # Recalculate average comfort including last mile
