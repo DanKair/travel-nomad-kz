@@ -20,6 +20,13 @@ from app.core.auth import require_api_key
 router = APIRouter(prefix="/tourist-points", tags=["Tourist Points"])
 
 
+def _with_has_route(point: TouristPoint) -> TouristPointResponse:
+    """Convert ORM model to response schema, computing has_route from loaded point_nodes."""
+    data = TouristPointResponse.model_validate(point)
+    data.has_route = len(point.point_nodes) > 0
+    return data
+
+
 @router.get("", response_model=List[TouristPointResponse])
 async def get_tourist_points(
     region_id: Optional[int] = Query(None, description="Filter by region ID"),
@@ -38,7 +45,11 @@ async def get_tourist_points(
     """
     query = (
         select(TouristPoint)
-        .options(joinedload(TouristPoint.region), joinedload(TouristPoint.category))
+        .options(
+            joinedload(TouristPoint.region),
+            joinedload(TouristPoint.category),
+            selectinload(TouristPoint.point_nodes),  # needed for has_route
+        )
     )
     
     # Apply filters if provided
@@ -50,7 +61,7 @@ async def get_tourist_points(
     
     result = await db.execute(query)
     tourist_points = result.scalars().all()
-    return tourist_points
+    return [_with_has_route(p) for p in tourist_points]
 
 
 @router.get("/{point_id}", response_model=TouristPointResponse)
@@ -69,7 +80,11 @@ async def get_tourist_point(point_id: int, db: AsyncSession = Depends(get_db)):
     """
     result = await db.execute(
         select(TouristPoint)
-        .options(joinedload(TouristPoint.region), joinedload(TouristPoint.category))
+        .options(
+            joinedload(TouristPoint.region),
+            joinedload(TouristPoint.category),
+            selectinload(TouristPoint.point_nodes),
+        )
         .filter(TouristPoint.id == point_id)
     )
     point = result.scalars().first()
@@ -78,7 +93,7 @@ async def get_tourist_point(point_id: int, db: AsyncSession = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Tourist point with id {point_id} not found"
         )
-    return point
+    return _with_has_route(point)
 
 
 @router.post("", 

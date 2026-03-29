@@ -35,6 +35,7 @@ export interface TouristPoint {
   category_id: number;
   region: Region;
   category: Category;
+  has_route?: boolean; // true if PointNodes exist (route can be built)
 
   // Optional metadata fields
   elevation_m?: number | null;

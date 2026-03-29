@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Region, TouristPoint } from '../../types';
-import { ChevronRight, ArrowLeft, MapPin, Map as MapIcon, Compass } from 'lucide-react';
+import { ChevronRight, ArrowLeft, MapPin, Map as MapIcon, Compass, Navigation } from 'lucide-react';
 
 interface SidebarProps {
   regions: Region[];
@@ -84,7 +84,9 @@ const Sidebar: React.FC<SidebarProps> = ({
                     className={`w-full px-4 py-3 flex items-start gap-3 hover:bg-gray-50 border-l-4 transition-all ${
                       selectedPoint?.id === point.id 
                         ? 'bg-blue-50 border-blue-500 shadow-sm' 
-                        : 'border-transparent'
+                        : point.has_route
+                          ? 'border-transparent hover:border-green-400'
+                          : 'border-transparent opacity-80'
                     }`}
                   >
                     <div className="relative flex-shrink-0">
@@ -93,16 +95,28 @@ const Sidebar: React.FC<SidebarProps> = ({
                         alt={point.name}
                         className="w-16 h-16 rounded-lg object-cover shadow-sm"
                       />
-                      <div className="absolute -bottom-1 -right-1 bg-white p-1 rounded-full shadow-sm">
-                        <MapPin className="w-3 h-3 text-red-500" />
+                      {/* Routable indicator badge */}
+                      <div className={`absolute -bottom-1 -right-1 p-1 rounded-full shadow-sm ${
+                        point.has_route ? 'bg-green-500' : 'bg-white'
+                      }`}>
+                        {point.has_route
+                          ? <Navigation className="w-3 h-3 text-white" />
+                          : <MapPin className="w-3 h-3 text-red-400" />}
                       </div>
                     </div>
-                    <div className="text-left">
+                    <div className="text-left flex-1 min-w-0">
                       <div className={`font-bold text-sm ${selectedPoint?.id === point.id ? 'text-blue-700' : 'text-gray-800'}`}>
                         {point.name}
                       </div>
-                      <div className="text-[10px] text-gray-400 font-medium uppercase mt-0.5 tracking-tight">
-                        {point.category.name}
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] text-gray-400 font-medium uppercase tracking-tight">
+                          {point.category.name}
+                        </span>
+                        {point.has_route && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 uppercase tracking-wide">
+                            Routable
+                          </span>
+                        )}
                       </div>
                       <p className="text-[11px] text-gray-500 mt-1 line-clamp-2 leading-tight">
                         {point.description}

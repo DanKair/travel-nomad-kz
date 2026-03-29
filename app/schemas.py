@@ -211,6 +211,7 @@ class TouristPointResponse(TouristPointBase):
     id: int
     region: RegionResponse
     category: CategoryResponse
+    has_route: bool = False  # True if at least one PointNode (last-mile access) exists
     
     model_config = ConfigDict(from_attributes=True)
 

@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { TouristPoint } from '../../types';
-import { X, MapPin, Thermometer, Mountain, Calendar, ArrowRight, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, MapPin, Thermometer, Mountain, Calendar, ArrowRight, ChevronDown, ChevronUp, Navigation, AlertCircle } from 'lucide-react';
 
 interface TouristPointCardProps {
   point: TouristPoint;
@@ -36,6 +36,11 @@ const TouristPointCard: React.FC<TouristPointCardProps> = ({ point, onClose, onB
             <span className="flex items-center gap-1 text-xs text-blue-200">
               <MapPin className="w-3 h-3" /> {point.region.name}
             </span>
+            {point.has_route && (
+              <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded bg-green-500/90 text-white uppercase tracking-wider">
+                <Navigation className="w-3 h-3" /> Routable
+              </span>
+            )}
           </div>
           <h2 className="text-3xl font-bold">{point.name}</h2>
         </div>
@@ -116,13 +121,23 @@ const TouristPointCard: React.FC<TouristPointCardProps> = ({ point, onClose, onB
 
       {/* Footer / CTA */}
       <div className="p-6 bg-gray-50 border-t border-gray-100">
-        <button
-          onClick={onBuildRoute}
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-2 group transform hover:-translate-y-0.5"
-        >
-          <span>BUILD ROUTE FROM ALMATY</span>
-          <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-        </button>
+        {point.has_route ? (
+          <button
+            onClick={onBuildRoute}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-2 group transform hover:-translate-y-0.5"
+          >
+            <span>BUILD ROUTE FROM ALMATY</span>
+            <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+          </button>
+        ) : (
+          <div className="w-full flex items-center justify-center gap-3 py-4 px-6 rounded-xl bg-gray-100 text-gray-400 cursor-not-allowed">
+            <AlertCircle className="w-5 h-5 flex-shrink-0" />
+            <div className="text-sm font-semibold text-left">
+              Route not available
+              <p className="text-[11px] font-normal text-gray-400 mt-0.5">No access points configured for this destination yet.</p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
