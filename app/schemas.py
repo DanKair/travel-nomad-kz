@@ -357,6 +357,37 @@ class RouteResponse(BaseModel):
     
     model_config = ConfigDict(from_attributes=True)
 
+
+class RouteAlternative(RouteResponse):
+    """
+    A single profile alternative — extends RouteResponse with labeling metadata.
+
+    Each alternative represents the optimal path for ONE specific optimization
+    profile (fastest / cheapest / comfort / eco / optimal).
+
+    When two profiles produce identical paths (same sequence of segments),
+    they are merged into a single RouteAlternative with combined tags instead
+    of returning duplicates.
+    """
+    profile: str = Field(..., description="Profile key: fastest | cheapest | comfort | eco | optimal")
+    label: str = Field(..., description="Human-readable profile name, e.g. 'Fastest'")
+    is_recommended: bool = Field(False, description="True for the balanced 'optimal' profile")
+    tags: List[str] = Field(default_factory=list, description="Extra labels when profile merges, e.g. ['Also Cheapest']")
+
+
+class RouteAlternativesResponse(BaseModel):
+    """
+    Top-level response for GET /routes/alternatives.
+
+    Contains all deduplicated profile alternatives ordered with 'optimal' first.
+    Identical paths across profiles are merged — the surviving entry receives
+    extra tags (e.g. 'Also Cheapest') instead of being duplicated.
+    """
+    from_node: str
+    to_tourist_point: str
+    alternatives: List[RouteAlternative]
+
+
 # =============================================================================
 # DATA MANAGEMENT SCHEMAS
 # =============================================================================

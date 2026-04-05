@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
-from app.schemas import RouteResponse
+from app.schemas import RouteResponse, RouteAlternativesResponse
 from app.services.routing import RoutingService
 from fastapi_cache.decorator import cache
 from app.redis import get_redis
@@ -97,4 +97,48 @@ async def calculate_route(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to calculate route: {str(e)}"
+        )
+
+
+@router.get("/alternatives", response_model=RouteAlternativesResponse)
+async def calculate_route_alternatives(
+    from_node: str = Query(..., description="Starting node slug (e.g., 'almaty')"),
+    to_tourist_point: str = Query(..., description="Destination tourist point slug"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Calculate all route profile alternatives in a single request — Rome2Rio style.
+
+    Runs 5 Dijkstra profiles simultaneously (sharing one graph build) and
+    returns ALL unique route alternatives, deduplicated and labelled:
+      - Optimal  (balanced: time 35%, cost 30%, comfort 20%, CO2 15%)
+      - Fastest  (time 85%)
+      - Cheapest (cost 85%)
+      - Comfort  (comfort 80%)
+      - Eco      (CO2 80%)
+
+    When two profiles produce identical itineraries, they are merged into one
+    entry with extra tags (e.g. "Also Cheapest") instead of being duplicated.
+
+    Example:
+        GET /routes/alternatives?from_node=almaty&to_tourist_point=charyn-canyon
+    """
+    try:
+        routing_service = RoutingService(db)
+        alternatives = await routing_service.calculate_all_alternatives(
+            from_node_slug=from_node,
+            to_tourist_point_slug=to_tourist_point,
+        )
+        return alternatives
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to calculate route alternatives: {str(e)}"
         )

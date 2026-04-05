@@ -86,4 +86,19 @@ export interface RouteResponse {
   optimization_score: number;
 }
 
+/** A single profile alternative returned by /routes/alternatives */
+export interface RouteAlternative extends RouteResponse {
+  profile: FilterType;
+  label: string;         // "Fastest", "Cheapest", etc.
+  is_recommended: boolean; // true for "optimal"
+  tags: string[];        // ["Also Cheapest"] when paths deduplicated
+}
+
+/** Top-level response from GET /routes/alternatives */
+export interface RouteAlternativesResponse {
+  from_node: string;
+  to_tourist_point: string;
+  alternatives: RouteAlternative[];
+}
+
 export type FilterType = 'fastest' | 'cheapest' | 'optimal' | 'comfort' | 'eco';

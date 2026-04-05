@@ -4,7 +4,7 @@ import Sidebar from './components/Sidebar/Sidebar';
 import MainMap from './components/Map/MainMap';
 import TouristPointCard from './components/Main/TouristPointCard';
 import RouteDisplay from './components/Main/RouteDisplay';
-import { Region, TouristPoint, RouteResponse, FilterType } from './types';
+import { Region, TouristPoint, RouteAlternative, FilterType } from './types';
 import { api } from './services/api';
 
 const App: React.FC = () => {
@@ -12,10 +12,14 @@ const App: React.FC = () => {
   const [selectedRegion, setSelectedRegion] = useState<Region | null>(null);
   const [points, setPoints] = useState<TouristPoint[]>([]);
   const [selectedPoint, setSelectedPoint] = useState<TouristPoint | null>(null);
-  const [route, setRoute] = useState<RouteResponse | null>(null);
+  // All profile alternatives loaded in a single fetch
+  const [alternatives, setAlternatives] = useState<RouteAlternative[]>([]);
   const [activeFilter, setActiveFilter] = useState<FilterType>('optimal');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Derived: the route currently on display (matches active filter profile)
+  const activeRoute = alternatives.find((a) => a.profile === activeFilter) ?? alternatives[0] ?? null;
 
   useEffect(() => {
     const fetchData = async () => {
@@ -38,7 +42,7 @@ const App: React.FC = () => {
   const handleRegionSelect = async (region: Region) => {
     setSelectedRegion(region);
     setSelectedPoint(null);
-    setRoute(null);
+    setAlternatives([]);
     try {
       const pointsData = await api.getTouristPoints(region.id);
       setPoints(pointsData);
@@ -49,25 +53,28 @@ const App: React.FC = () => {
 
   const handlePointSelect = (point: TouristPoint) => {
     setSelectedPoint(point);
-    setRoute(null);
+    setAlternatives([]);
   };
 
-  const handleBuildRoute = async (filter: FilterType = 'optimal') => {
+  /**
+   * Fetch all route alternatives in one request, then set Optimal as active.
+   * Subsequent filter clicks only change activeFilter — no new network call.
+   */
+  const handleBuildRoute = async () => {
     if (!selectedPoint) return;
     setLoading(true);
     setError(null);
-    setActiveFilter(filter);
+    setActiveFilter('optimal'); // Reset to recommended profile on new fetch
     try {
-      const routeData = await api.calculateRoute('almaty', selectedPoint.slug, filter);
-      setRoute(routeData);
-    }
-    catch (err: any) {
+      const data = await api.calculateAllRoutes('almaty', selectedPoint.slug);
+      setAlternatives(data.alternatives);
+    } catch (err: any) {
       console.error('❌ Route build failed:', err);
 
       let errorMessage = 'Unable to build route';
-
       if (err.message.includes('not found') || err.message.includes('Route not found')) {
-        errorMessage = `❌ No route from Almaty to ${selectedPoint.name}\n\n` +
+        errorMessage =
+          `❌ No route from Almaty to ${selectedPoint.name}\n\n` +
           `Possible causes:\n` +
           `• Missing transport segments\n` +
           `• No access point configured\n\n` +
@@ -79,11 +86,15 @@ const App: React.FC = () => {
       }
 
       setError(errorMessage);
-      setTimeout(() => setError(null), 10000); // 10 seconds
-    }
-    finally {
+      setTimeout(() => setError(null), 10000);
+    } finally {
       setLoading(false);
     }
+  };
+
+  /** Pure view switch — no network request */
+  const handleFilterChange = (filter: FilterType) => {
+    setActiveFilter(filter);
   };
 
   return (
@@ -103,10 +114,11 @@ const App: React.FC = () => {
       <main className="relative flex-1 h-full">
         {/* Map View */}
         <div className="absolute inset-0 z-0">
-          {route ? (
+          {activeRoute ? (
             <RouteDisplay
-              route={route}
-              onFilterChange={handleBuildRoute}
+              route={activeRoute!}
+              alternatives={alternatives}
+              onFilterChange={handleFilterChange}
               activeFilter={activeFilter}
               isLoading={loading}
             />
@@ -121,7 +133,7 @@ const App: React.FC = () => {
         </div>
 
         {/* Floating Point Card Overlay */}
-        {selectedPoint && !route && (
+        {selectedPoint && !activeRoute && (
           <div className="absolute inset-0 z-10 flex items-center justify-center p-4 bg-black/20 backdrop-blur-sm pointer-events-none">
             <div className="pointer-events-auto">
               <TouristPointCard

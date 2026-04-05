@@ -91,6 +91,19 @@ export interface RouteResponse {
   last_mile_access: LastMileAccess;
 }
 
+export interface RouteAlternative extends RouteResponse {
+  profile: FilterType;
+  label: string;
+  is_recommended: boolean;
+  tags: string[];
+}
+
+export interface RouteAlternativesResponse {
+  from_node: string;
+  to_tourist_point: string;
+  alternatives: RouteAlternative[];
+}
+
 // ============================================================================
 // MOCK DATA (Fallback only)
 // ============================================================================
@@ -261,10 +274,10 @@ export const api = {
       // Build weight parameters based on filter
       const weights: Record<FilterType, any> = {
         fastest: { time_weight: 0.8, cost_weight: 0.1, comfort_weight: 0.05, co2_weight: 0.05 },
-        cheapest: { time_weight: 0.1, cost_weight: 0.8, comfort_weight: 0.05, co2_weight: 0.05 },
+        cheapest: { time_weight: 0.05, cost_weight: 0.85, comfort_weight: 0.05, co2_weight: 0.05 },
         optimal: { time_weight: 0.4, cost_weight: 0.3, comfort_weight: 0.2, co2_weight: 0.1 },
-        comfort: { time_weight: 0.15, cost_weight: 0.1, comfort_weight: 0.7, co2_weight: 0.05 },
-        eco: { time_weight: 0.1, cost_weight: 0.1, comfort_weight: 0.1, co2_weight: 0.7 },
+        comfort: { time_weight: 0.05, cost_weight: 0.1, comfort_weight: 0.8, co2_weight: 0.05 },
+        eco: { time_weight: 0.05, cost_weight: 0.1, comfort_weight: 0.05, co2_weight: 0.8 },
       };
 
       // Call backend routing API
@@ -292,7 +305,40 @@ export const api = {
 
       throw new Error(`Failed to calculate route: ${err.message}`);
     }
-  }
+  },
+
+  /**
+   * Calculate ALL route profile alternatives in one request — Rome2Rio style.
+   *
+   * Returns up to 5 deduplicated alternatives (Optimal, Fastest, Cheapest,
+   * Comfort, Eco). Profiles that produce identical itineraries are merged
+   * into a single entry with extra `tags` (e.g. "Also Cheapest").
+   *
+   * No filter/weight params needed — profile weights are fixed server-side.
+   */
+  calculateAllRoutes: async (
+    from: string,
+    to: string,
+  ): Promise<RouteAlternativesResponse> => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/routes/alternatives`, {
+        params: { from_node: from, to_tourist_point: to },
+      });
+      return response.data;
+    } catch (err: any) {
+      console.error('❌ Alternatives fetch failed:', err.response?.data || err.message);
+
+      if (err.response?.status === 404 || err.response?.status === 400) {
+        throw new Error(
+          `Route not found: ${err.response?.data?.detail || 'No valid route exists'}`
+        );
+      }
+      if (!err.response) {
+        throw new Error('Cannot connect to backend. Is it running on port 8000?');
+      }
+      throw new Error(`Failed to fetch route alternatives: ${err.message}`);
+    }
+  },
 };
 
 export default api;

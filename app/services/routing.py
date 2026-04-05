@@ -49,7 +49,9 @@ from app.models import Node, TransportSegment, TouristPoint, PointNode
 from app.schemas import (
     RouteResponse,
     RouteSegmentStep,
-    LastMileAccess
+    LastMileAccess,
+    RouteAlternative,
+    RouteAlternativesResponse,
 )
 from app.core.config import settings
 from app.constants import CO2_PER_KM_ACCESS, COMFORT_SCORE_ACCESS
@@ -59,11 +61,35 @@ class RoutingService:
     """
     Service for calculating optimal routes using multi-criteria Dijkstra.
     """
-    
+
+    # -------------------------------------------------------------------------
+    # ROUTE PROFILES
+    # Each profile is a set of Pareto weights that biases the Dijkstra search
+    # toward a specific optimization goal. All weights must sum to 1.0.
+    # -------------------------------------------------------------------------
+    PROFILES: Dict[str, Dict[str, float]] = {
+        "fastest":  {"time": 0.85, "cost": 0.05, "comfort": 0.05, "co2": 0.05},
+        "cheapest": {"time": 0.05, "cost": 0.85, "comfort": 0.05, "co2": 0.05},
+        "comfort":  {"time": 0.05, "cost": 0.10, "comfort": 0.80, "co2": 0.05},
+        "eco":      {"time": 0.05, "cost": 0.10, "comfort": 0.05, "co2": 0.80},
+        "optimal":  {"time": 0.45, "cost": 0.35, "comfort": 0.10, "co2": 0.10},
+    }
+
+    PROFILE_LABELS: Dict[str, str] = {
+        "fastest":  "Fastest",
+        "cheapest": "Cheapest",
+        "comfort":  "Comfort",
+        "eco":      "Eco",
+        "optimal":  "Optimal",
+    }
+
+    # Display order for the alternatives list (Optimal card shown first)
+    PROFILE_ORDER = ["optimal", "fastest", "cheapest", "comfort", "eco"]
+
     def __init__(self, db: AsyncSession):
         """
         Initialize routing service with database session.
-        
+
         Args:
             db: SQLAlchemy database session for querying nodes and segments
         """
@@ -139,7 +165,10 @@ class RoutingService:
         best_score = float('inf')
         import logging
         logger = logging.getLogger(__name__)
-        
+
+        # Build graph once (shared across all PointNode attempts for this call)
+        graph = await self._build_graph()
+
         for point_node in point_nodes:
             try:
                 logger.info(f"Routing from {start_node.id} to PointNode.node_id {point_node.node_id}")
@@ -147,35 +176,36 @@ class RoutingService:
                 route = await self._dijkstra_multi_criteria(
                     start_node.id,
                     point_node.node_id,
-                    weights
+                    weights,
+                    graph=graph,
                 )
-                
+
                 if route:
                     # Calculate total score including last-mile access
                     total_score = route['optimization_score']
-                    
+
                     # Add last-mile cost to score (weighted)
                     last_mile_score = self._calculate_last_mile_score(point_node, weights)
                     total_score += last_mile_score
-                    
+
                     logger.info(f"Route found to point_node {point_node.id}, score: {total_score}")
-                    
+
                     if total_score < best_score:
                         best_score = total_score
                         best_route = (route, point_node)
                 else:
                     logger.warning(f"No path found to point_node {point_node.id} (node {point_node.node_id})")
-            
+
             except Exception as e:
                 logger.error(f"Error routing to point_node {point_node.id}: {str(e)}", exc_info=True)
                 # If routing to this PointNode fails, try the next one
                 continue
-        
+
         if not best_route:
             raise ValueError(
                 f"No valid route found from '{from_node_slug}' to '{to_tourist_point_slug}'"
             )
-        
+
         # 5. Build the response with the best route + last-mile access
         route_data, point_node = best_route
         return self._build_route_response(
@@ -185,7 +215,204 @@ class RoutingService:
             point_node,
             best_score
         )
+
+    async def calculate_all_alternatives(
+        self,
+        from_node_slug: str,
+        to_tourist_point_slug: str,
+    ) -> RouteAlternativesResponse:
+        """
+        Calculate all profile alternatives in a single call — Rome2Rio style.
+
+        FLOW:
+        1. Resolve nodes / tourist point / PointNodes (same as calculate_route)
+        2. Build the transport graph ONCE (expensive DB query, shared across all profiles)
+        3. For each profile in PROFILES, run Dijkstra with that profile's weights
+           and pick the best PointNode access option
+        4. Deduplicate: if two profiles produce the same path (identical segment IDs),
+           merge their labels into `tags` on the winning entry
+        5. Order results: Optimal first, then fastest/cheapest/comfort/eco
+        6. Return RouteAlternativesResponse with all unique alternatives
+
+        Args:
+            from_node_slug: Starting node slug (e.g., "almaty")
+            to_tourist_point_slug: Destination tourist point slug
+
+        Returns:
+            RouteAlternativesResponse with deduplicated profile alternatives
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # --- Resolve nodes and access points (same as calculate_route) ---
+        result = await self.db.execute(select(Node).filter(Node.slug == from_node_slug))
+        start_node = result.scalars().first()
+        if not start_node:
+            raise ValueError(f"Starting node '{from_node_slug}' not found")
+
+        result = await self.db.execute(
+            select(TouristPoint).filter(TouristPoint.slug == to_tourist_point_slug)
+        )
+        tourist_point = result.scalars().first()
+        if not tourist_point:
+            raise ValueError(f"Tourist point '{to_tourist_point_slug}' not found")
+
+        result = await self.db.execute(
+            select(PointNode)
+            .options(joinedload(PointNode.node), joinedload(PointNode.tourist_point))
+            .filter(PointNode.tourist_point_id == tourist_point.id)
+        )
+        point_nodes = result.scalars().all()
+
+        if not point_nodes:
+            raise ValueError(
+                f"No access points configured for tourist point '{to_tourist_point_slug}'"
+            )
+
+        # --- Build graph ONCE, reuse for all profiles ---
+        graph = await self._build_graph()
+
+        # --- Run each profile ---
+        # Path signature: tuple of segment IDs in order, uniquely identifies a path.
+        # Used for deduplication — same signature = same physical route.
+        seen: Dict[tuple, RouteAlternative] = {}  # signature → RouteAlternative
+
+        for profile_name in self.PROFILE_ORDER:
+            weights = self.PROFILES[profile_name]
+            best_route = None
+            best_score = float('inf')
+
+            for point_node in point_nodes:
+                try:
+                    route = await self._dijkstra_multi_criteria(
+                        start_node.id,
+                        point_node.node_id,
+                        weights,
+                        graph=graph,
+                    )
+                    if route:
+                        total_score = route['optimization_score']
+                        total_score += self._calculate_last_mile_score(point_node, weights)
+                        if total_score < best_score:
+                            best_score = total_score
+                            best_route = (route, point_node)
+                except Exception as e:
+                    logger.error(f"[{profile_name}] Error routing to point_node {point_node.id}: {e}")
+                    continue
+
+            if not best_route:
+                logger.warning(f"Profile '{profile_name}' found no valid route — skipping")
+                continue
+
+            route_data, point_node = best_route
+
+            # Build path signature from the segment IDs
+            path_signature = tuple(seg.id for seg in route_data['path'])
+            # Include the point_node id so different access options are distinct
+            full_signature = path_signature + (point_node.id,)
+
+            if full_signature in seen:
+                # Duplicate path — merge label as extra tag on the existing entry
+                existing = seen[full_signature]
+                existing.tags.append(f"Also {self.PROFILE_LABELS[profile_name]}")
+                logger.info(
+                    f"Profile '{profile_name}' is duplicate of '{existing.profile}' — merged as tag"
+                )
+            else:
+                # Build a full RouteResponse for this profile.
+                # Labels are intentionally left empty here — they will be
+                # assigned post-hoc by _assign_labels() based on actual
+                # metric performance, NOT by which profile discovered the path.
+                base_response = self._build_route_response(
+                    from_node_slug,
+                    to_tourist_point_slug,
+                    route_data,
+                    point_node,
+                    best_score,
+                )
+                alternative = RouteAlternative(
+                    **base_response.model_dump(),
+                    profile=profile_name,
+                    label="",           # assigned post-hoc
+                    is_recommended=False,
+                    tags=[],
+                )
+                seen[full_signature] = alternative
+
+        if not seen:
+            raise ValueError(
+                f"No valid route found from '{from_node_slug}' to '{to_tourist_point_slug}'"
+            )
+
+        ordered = list(seen.values())  # Already in PROFILE_ORDER insertion sequence
+
+        # Assign labels based on what each route actually wins, not which
+        # profile discovered it. Routes that don't win any criterion are unlabeled.
+        self._assign_labels(ordered)
+
+        return RouteAlternativesResponse(
+            from_node=from_node_slug,
+            to_tourist_point=to_tourist_point_slug,
+            alternatives=ordered,
+        )
     
+    def _assign_labels(self, alternatives: List[RouteAlternative]) -> None:
+        """
+        Assign human-readable labels based on ACTUAL metric performance.
+
+        WHY POST-HOC?
+        Dijkstra with comfort_weight=0.8 doesn't guarantee the route with the
+        highest average_comfort — other criteria (time, cost) still contribute
+        20% of the score. A short cheap route with comfort=5 can beat a long
+        expensive one with comfort=8 under that weighting.
+
+        So instead of labeling by "which profile found this route", we compare
+        all discovered alternatives directly on each raw metric:
+          - Fastest  → lowest total_time_minutes
+          - Cheapest → lowest total_cost
+          - Comfort  → highest average_comfort
+          - Eco      → lowest total_co2_kg
+          - Optimal  → the route found by the balanced profile (always present)
+
+        A route that doesn't win any criterion is left unlabeled (label="").
+        If the Optimal route also wins a criterion (common when graph is sparse),
+        that criterion is added to its tags.
+
+        Mutates the list in-place.
+        """
+        if not alternatives:
+            return
+
+        def assign(winner: RouteAlternative, label: str) -> None:
+            if not winner.label:
+                winner.label = label
+            else:
+                # This route already has a label — add this as an extra tag
+                winner.tags.append(label)
+
+        # Find the genuine winner for each single-criterion metric
+        fastest  = min(alternatives, key=lambda r: r.total_time_minutes)
+        cheapest = min(alternatives, key=lambda r: float(r.total_cost))
+        most_comfortable = max(alternatives, key=lambda r: r.average_comfort)
+        ecofriendly = min(alternatives, key=lambda r: r.total_co2_kg)
+
+        assign(fastest,          "Fastest")
+        assign(cheapest,         "Cheapest")
+        assign(most_comfortable, "Comfort")
+        assign(ecofriendly,      "Eco")
+
+        # The Optimal route is identified by its profile key (it's the one
+        # the balanced algorithm chose), not by any single metric win.
+        optimal = next((r for r in alternatives if r.profile == "optimal"), None)
+        if optimal:
+            optimal.is_recommended = True
+            if not optimal.label:
+                optimal.label = "Optimal"
+            else:
+                # Optimal route happens to also win a specific criterion —
+                # keep that label as primary and append Optimal tag
+                optimal.tags.append("Optimal")
+
     def _get_weights(
         self,
         time_weight: Optional[float],
@@ -220,7 +447,8 @@ class RoutingService:
         self,
         start_node_id: int,
         end_node_id: int,
-        weights: Dict[str, float]
+        weights: Dict[str, float],
+        graph: Optional[Dict[int, List[Tuple[int, TransportSegment]]]] = None,
     ) -> Optional[Dict]:
         """
         Multi-Criteria Dijkstra Algorithm with Pareto Weights.
@@ -266,8 +494,11 @@ class RoutingService:
         """
         
         # Step 1: Build graph (adjacency list) from TransportSegments
-        graph = await self._build_graph()
-        
+        # Accept a pre-built graph to avoid redundant DB queries when called
+        # multiple times in a single request (e.g., calculate_all_alternatives).
+        if graph is None:
+            graph = await self._build_graph()
+
         if start_node_id not in graph:
             return None
         
@@ -323,7 +554,7 @@ class RoutingService:
                 if neighbor_id in visited:
                     continue
                 
-                # Calculate cumulative metrics if we go through this segment
+                # Calculate cumulative raw metrics (used in final response totals)
                 new_time = distances[current_node]['time'] + segment.time_minutes
                 new_cost = distances[current_node]['cost'] + float(segment.cost)
                 new_distance = distances[current_node]['distance'] + segment.distance_km
@@ -331,22 +562,19 @@ class RoutingService:
                 
                 # For comfort: we want HIGHER comfort to be BETTER
                 # So we treat it as a penalty: (10 - comfort_score)
-                # This way, lower penalty means better comfort
                 comfort_penalty = (10 - segment.comfort_score)
                 new_comfort = distances[current_node]['comfort'] + comfort_penalty
                 
-                # Normalize and combine using Pareto weights
-                # Normalization converts different units to 0-1 scale
-                normalized_score = self._calculate_combined_score(
-                    time=new_time,
-                    cost=new_cost,
-                    comfort=new_comfort,
-                    co2=new_co2,
-                    weights=weights
-                )
+                # KEY FIX: Normalize and weight THIS SEGMENT individually, then
+                # accumulate into the running score.
+                # Previously: we accumulated raw totals and normalized once at the end
+                #   → clamping to 1.0 destroyed weight differentiation for multi-hop routes
+                # Now: each segment's score contribution is correctly bounded before summing
+                seg_score = self._calculate_segment_score(segment, weights)
+                new_score = distances[current_node]['score'] + seg_score
                 
                 # If this is the first time visiting neighbor, or if we found a better path
-                if neighbor_id not in distances or normalized_score < distances[neighbor_id]['score']:
+                if neighbor_id not in distances or new_score < distances[neighbor_id]['score']:
                     # Update the best metrics for this neighbor
                     distances[neighbor_id] = {
                         'time': new_time,
@@ -354,14 +582,14 @@ class RoutingService:
                         'comfort': new_comfort,
                         'co2': new_co2,
                         'distance': new_distance,
-                        'score': normalized_score
+                        'score': new_score
                     }
                     
                     # Remember how we got here (for path reconstruction)
                     previous[neighbor_id] = (current_node, segment)
                     
                     # Add to queue for processing
-                    heapq.heappush(priority_queue, (normalized_score, neighbor_id))
+                    heapq.heappush(priority_queue, (new_score, neighbor_id))
         
         # Step 4: Check if we found a path
         if end_node_id not in distances:
@@ -425,63 +653,51 @@ class RoutingService:
         
         return graph
     
-    def _calculate_combined_score(
+    # Normalization bounds per single segment
+    # These represent the upper bound for a SINGLE segment's metric value.
+    # Using per-segment bounds prevents clamping on multi-hop routes.
+    _MAX_SEG_TIME    = 480   # 8 hours (longest single segment, e.g. long train/flight)
+    _MAX_SEG_COST    = 30000 # 30,000 KZT (most expensive single ticket)
+    _MAX_SEG_COMFORT = 10    # Comfort penalty per segment: (10 - comfort_score), range 0-10
+    _MAX_SEG_CO2     = 100   # ~100 kg CO2 for a single long-haul flight
+
+    def _calculate_segment_score(
         self,
-        time: float,
-        cost: float,
-        comfort: float,
-        co2: float,
+        segment: TransportSegment,
         weights: Dict[str, float]
     ) -> float:
         """
-        Calculate combined score using Pareto weights.
-        
-        NORMALIZATION EXPLANATION:
-        Since our criteria have different units (minutes, KZT, kg), we need to
-        normalize them to a common scale before combining. Otherwise, the criterion
-        with bigger numbers would dominate.
-        
-        For this MVP, we use simple normalization based on reasonable bounds:
-        - Time: Assume max trip is 1440 minutes (24 hours)
-        - Cost: Assume max trip is 50,000 KZT
-        - Comfort penalty: Already on 0-10 scale (10 = worst, 0 = best)
-        - CO2: Assume max is 200 kg per trip
-        
-        In production, you'd calculate these from actual data (max values in database).
-        
+        Calculate the weighted score contribution of a SINGLE segment.
+
+        WHY PER-SEGMENT NORMALIZATION?
+        The old approach accumulated raw totals (time, cost, …) across all
+        segments, then normalized the cumulative total at the end.
+        Problem: with MAX_COMFORT = 10 but a 3-hop trip producing comfort
+        penalty = 15, the min() clamp made every multi-hop route score
+        identically on comfort — completely erasing the effect of comfort_weight.
+
+        By normalizing each segment independently, each hop's contribution is
+        always within [0, weight_i], so the final accumulated score correctly
+        reflects the chosen filter (fastest / cheapest / comfort / eco).
+
         Args:
-            time: Cumulative time in minutes
-            cost: Cumulative cost in KZT
-            comfort: Cumulative comfort penalty
-            co2: Cumulative CO2 in kg
-            weights: Pareto weights
-        
+            segment: A single TransportSegment
+            weights: Pareto weights for each criterion
+
         Returns:
-            Combined weighted score (lower is better)
+            Weighted normalized score for this one segment (lower is better)
         """
-        
-        # Normalization bounds (you could calculate these from data)
-        MAX_TIME = 1440  # 24 hours in minutes
-        MAX_COST = 50000  # 50,000 KZT
-        MAX_COMFORT = 10  # Comfort penalty scale
-        MAX_CO2 = 200  # 200 kg CO2
-        
-        # Normalize each criterion to 0-1 scale
-        norm_time = min(time / MAX_TIME, 1.0)
-        norm_cost = min(cost / MAX_COST, 1.0)
-        norm_comfort = min(comfort / MAX_COMFORT, 1.0)
-        norm_co2 = min(co2 / MAX_CO2, 1.0)
-        
-        # Combine using Pareto weights
-        # This gives us a single score we can minimize
-        combined_score = (
-            weights['time'] * norm_time +
-            weights['cost'] * norm_cost +
+        norm_time    = min(segment.time_minutes         / self._MAX_SEG_TIME,    1.0)
+        norm_cost    = min(float(segment.cost)          / self._MAX_SEG_COST,    1.0)
+        norm_comfort = min((10 - segment.comfort_score) / self._MAX_SEG_COMFORT, 1.0)
+        norm_co2     = min(segment.co2_kg               / self._MAX_SEG_CO2,     1.0)
+
+        return (
+            weights['time']    * norm_time    +
+            weights['cost']    * norm_cost    +
             weights['comfort'] * norm_comfort +
-            weights['co2'] * norm_co2
+            weights['co2']     * norm_co2
         )
-        
-        return combined_score
     
     def _reconstruct_path(
         self,
@@ -564,14 +780,17 @@ class RoutingService:
         else:
             comfort_val = point_node.comfort_score
 
-        comfort_penalty = 10 - comfort_val
-        
-        return self._calculate_combined_score(
-            time=point_node.time_minutes,
-            cost=float(point_node.cost),
-            comfort=comfort_penalty,
-            co2=co2,
-            weights=weights
+        # Use the same per-segment normalization bounds for a fair comparison
+        norm_time    = min(point_node.time_minutes / self._MAX_SEG_TIME,    1.0)
+        norm_cost    = min(float(point_node.cost)  / self._MAX_SEG_COST,    1.0)
+        norm_comfort = min((10 - comfort_val)       / self._MAX_SEG_COMFORT, 1.0)
+        norm_co2     = min(co2                      / self._MAX_SEG_CO2,     1.0)
+
+        return (
+            weights['time']    * norm_time    +
+            weights['cost']    * norm_cost    +
+            weights['comfort'] * norm_comfort +
+            weights['co2']     * norm_co2
         )
     
     def _build_route_response(

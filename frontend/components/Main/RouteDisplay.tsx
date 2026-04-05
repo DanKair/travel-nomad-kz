@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap, ZoomControl } from 'react-leaflet';
 import L from 'leaflet';
-import { RouteResponse, RouteSegmentStep, FilterType, TransportMode, LastMileAccess } from '../../types';
+import { RouteResponse, RouteSegmentStep, FilterType, TransportMode, LastMileAccess, RouteAlternative } from '../../types';
 import { TRANSPORT_COLORS, ACCESS_COLORS } from '../../constants';
 import FilterToggles from './FilterToggles';
 import RouteDetailPanel from './RouteDetailPanel';
@@ -65,12 +65,13 @@ const getModeIcon = (mode: string) => {
 
 interface RouteDisplayProps {
   route: RouteResponse;
+  alternatives: RouteAlternative[];   // All profiles loaded in one fetch
   onFilterChange: (filter: FilterType) => void;
   activeFilter: FilterType;
   isLoading: boolean;
 }
 
-const RouteDisplay: React.FC<RouteDisplayProps> = ({ route, onFilterChange, activeFilter, isLoading }) => {
+const RouteDisplay: React.FC<RouteDisplayProps> = ({ route, alternatives, onFilterChange, activeFilter, isLoading }) => {
   const [segmentsWithGeo, setSegmentsWithGeo] = useState<RouteSegmentStep[]>([]);
   const [lastMileWithGeo, setLastMileWithGeo] = useState<LastMileAccess | null>(null);
   const [selectedSegment, setSelectedSegment] = useState<RouteSegmentStep | LastMileAccess | null>(null);
@@ -252,7 +253,12 @@ const RouteDisplay: React.FC<RouteDisplayProps> = ({ route, onFilterChange, acti
 
       {/* Info Overlay */}
       <div className="absolute top-6 left-6 z-[1000] flex flex-col gap-4">
-        <FilterToggles onFilterChange={onFilterChange} activeFilter={activeFilter} isLoading={isLoading} />
+        <FilterToggles
+            alternatives={alternatives}
+            onFilterChange={onFilterChange}
+            activeFilter={activeFilter}
+            isLoading={isLoading}
+          />
         <div className="bg-white/90 backdrop-blur-md rounded-2xl shadow-xl p-5 w-64 border border-white/50 animate-in slide-in-from-left duration-500">
           <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
             <Navigation className="w-4 h-4 text-blue-500" /> Almaty → Destination
