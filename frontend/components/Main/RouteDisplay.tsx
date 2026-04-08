@@ -82,13 +82,14 @@ const RouteDisplay: React.FC<RouteDisplayProps> = ({ route, alternatives, onFilt
       console.log('🔄 Fetching route geometries...');
 
       try {
-        // Prepare all segment pairs
+        // Prepare all segment pairs with their transport modes
         const segmentPairs = route.route_steps.map(step => ({
           from: [step.from_node_lat!, step.from_node_lon!] as [number, number],
-          to: [step.to_node_lat!, step.to_node_lon!] as [number, number]
+          to: [step.to_node_lat!, step.to_node_lon!] as [number, number],
+          mode: step.transport_mode.toString()
         }));
 
-        // Fetch ALL in parallel (much faster!)
+        // Fetch ALL with mode-specific logic
         const geometries = await getBatchRouteGeometries(segmentPairs);
 
         const updatedSteps = route.route_steps.map((step, idx) => ({
@@ -99,7 +100,7 @@ const RouteDisplay: React.FC<RouteDisplayProps> = ({ route, alternatives, onFilt
         setSegmentsWithGeo(updatedSteps);
         console.log('✅ All geometries loaded');
 
-        // Handle last mile
+        // Handle last mile with its specific access type (map to mode logic)
         if (route.last_mile_access) {
           const start: [number, number] = [
             route.last_mile_access.from_node_lat!,
@@ -109,7 +110,11 @@ const RouteDisplay: React.FC<RouteDisplayProps> = ({ route, alternatives, onFilt
             route.last_mile_access.to_point_lat!,
             route.last_mile_access.to_point_lon!
           ];
-          const geo = await getRouteGeometry(start, end);
+          
+          // Map access_type to a mode for geometry logic 
+          // (e.g., TAXI -> OSRM, WALK -> OSRM/Straight)
+          const mode = route.last_mile_access.access_type.toUpperCase();
+          const geo = await getRouteGeometry(start, end, mode);
           setLastMileWithGeo({ ...route.last_mile_access, geometry: geo });
         }
       } catch (error) {
