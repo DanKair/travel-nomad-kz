@@ -17,7 +17,7 @@ const calculateHaversineDistance = (
     Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
-  return R * c; 
+  return R * c;
 };
 
 /** Generate a curved path for flight arcs */
@@ -29,7 +29,7 @@ const generateArcPoints = (
   const points: [number, number][] = [];
   const [lat1, lon1] = from;
   const [lat2, lon2] = to;
-  
+
   // Calculate distance to scale the arc height
   const dist = Math.sqrt(Math.pow(lat2 - lat1, 2) + Math.pow(lon2 - lon1, 2));
   const arcHeight = dist * 0.15; // 15% of distance as arc height
@@ -39,10 +39,10 @@ const generateArcPoints = (
     // Linear interpolation for basic path
     let lat = lat1 + (lat2 - lat1) * t;
     let lon = lon1 + (lon2 - lon1) * t;
-    
+
     // Quadratic lift (sin wave or parabola)
     const lift = Math.sin(Math.PI * t) * arcHeight;
-    
+
     // In a real map, "up" is usually positive latitude, 
     // but for very vertical paths we might need to adjust.
     // For now, we'll lift latitude.
@@ -58,7 +58,7 @@ export const getRouteGeometry = async (
 ): Promise<[number, number][]> => {
   const modeKey = mode.toUpperCase().replace('TRANSPORTMODE.', '');
   const cacheKey = `${modeKey}-${from[0].toFixed(4)},${from[1].toFixed(4)}-${to[0].toFixed(4)},${to[1].toFixed(4)}`;
-  
+
   if (routeCache.has(cacheKey)) {
     return routeCache.get(cacheKey)!;
   }
@@ -81,17 +81,17 @@ export const getRouteGeometry = async (
   // 3. OSRM for others (Cars, Buses, Taxis)
   try {
     const url = `${OSRM_BASE}/${from[1]},${from[0]};${to[1]},${to[0]}?geometries=geojson&overview=full`;
-    
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 4000); // 4s timeout
-    
-    const response = await fetch(url, { 
+
+    const response = await fetch(url, {
       signal: controller.signal,
       mode: 'cors'
     });
-    
+
     clearTimeout(timeoutId);
-    
+
     if (response.ok) {
       const data = await response.json();
       if (data.routes && data.routes[0]) {
@@ -99,8 +99,8 @@ export const getRouteGeometry = async (
         const detourFactor = osrmDistance / directDistance;
 
         // DETOUR PROTECTION: 
-        // If OSRM propose a detour > 1.8x, it's likely a border or mapping issue.
-        if (detourFactor > 1.8 && directDistance > 1000) {
+        // If OSRM propose a detour > 3x, it's likely a border or mapping issue.
+        if (detourFactor > 3 && directDistance > 1000) {
           console.warn(`🚨 Path Detour detected (${detourFactor.toFixed(1)}x for ${modeKey}). Snapping to direct line.`);
           return [from, to];
         }
@@ -108,7 +108,7 @@ export const getRouteGeometry = async (
         const geometry = data.routes[0].geometry.coordinates.map(
           ([lon, lat]: [number, number]) => [lat, lon] as [number, number]
         );
-        
+
         if (routeCache.size >= MAX_CACHE_SIZE) {
           const firstKey = routeCache.keys().next().value;
           routeCache.delete(firstKey);
@@ -120,7 +120,7 @@ export const getRouteGeometry = async (
   } catch (error) {
     console.warn(`⚠️ OSRM failed for ${modeKey}, using direct line`, error);
   }
-  
+
   return [from, to];
 };
 
@@ -128,10 +128,10 @@ export const getBatchRouteGeometries = async (
   segments: Array<{ from: [number, number]; to: [number, number]; mode: string }>
 ): Promise<[number, number][][]> => {
   console.log(`🚀 Batch fetching ${segments.length} geometries...`);
-  
+
   const results = await Promise.all(
     segments.map(seg => getRouteGeometry(seg.from, seg.to, seg.mode))
   );
-  
+
   return results;
 };
