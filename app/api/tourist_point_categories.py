@@ -46,6 +46,7 @@ async def delete_category(category_id: int, db: AsyncSession = Depends(get_db)):
     target_category = result.scalars().first()
     if not target_category:
         raise HTTPException(status_code=404, detail="Category not found")
+    name = target_category.name  # read before commit expires the object
     await db.delete(target_category)
     await db.commit()
-    return f"Category: '{target_category.name}' was deleted"
+    return f"Category: '{name}' was deleted"

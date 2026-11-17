@@ -76,7 +76,7 @@ async def create_region(region_data: RegionCreate, db: AsyncSession = Depends(ge
     existing = result.scalars().first()
     if existing:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_409_CONFLICT,
             detail=f"Region with name '{region_data.name}' already exists"
         )
     
@@ -135,7 +135,7 @@ async def delete_region(region_id: int, db: AsyncSession = Depends(get_db)):
     if target_region is None:
         raise HTTPException(status_code=404, detail="Region not found")
 
-    deleted_region = target_region.name
     await db.delete(target_region)
     await db.commit()
-    return f"{deleted_region} has been removed."
+    # 204 = "No Content": returning a body here breaks the HTTP response.
+    return None

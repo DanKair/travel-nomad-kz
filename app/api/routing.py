@@ -9,17 +9,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.schemas import RouteResponse, RouteAlternativesResponse
-from app.services.routing import RoutingService
+from app.services.routing import RoutingService, RouteNotFoundError
 from fastapi_cache.decorator import cache
-from app.redis import get_redis
-import redis.asyncio as aioredis
+from app.cache import route_key_builder, ROUTES_NAMESPACE
+from app.core.config import settings
 
 
 router = APIRouter(prefix="/routes", tags=["Routing"])
 
 
 @router.get("", response_model=RouteResponse)
-@cache(expire=3600)  # Cache for 1 hour
+@cache(expire=settings.ROUTE_CACHE_TTL_S, namespace=ROUTES_NAMESPACE, key_builder=route_key_builder)
 async def calculate_route(
     from_node: str = Query(..., description="Starting node slug (e.g., 'almaty')"),
     to_tourist_point: str = Query(..., description="Destination tourist point slug (e.g., 'charyn-canyon')"),
@@ -28,7 +28,6 @@ async def calculate_route(
     comfort_weight: Optional[float] = Query(None, ge=0, le=1, description="Comfort importance (0-1)"),
     co2_weight: Optional[float] = Query(None, ge=0, le=1, description="CO2 importance (0-1)"),
     db: AsyncSession = Depends(get_db),
-    redis_client: aioredis.Redis = Depends(get_redis)
 ):
     """
     Calculate optimal route from a node to a tourist point.
@@ -43,7 +42,8 @@ async def calculate_route(
     Multi-Criteria Optimization:
     - The algorithm balances time, cost, comfort, and CO2 emissions
     - Default weights can be customized via query parameters
-    - Weights should sum to 1.0 (validated by routing service)
+    - Supply any subset of weights; omitted ones count as 0 and the rest are
+      rescaled to sum to 1.0 (so `time_weight=0.6&cost_weight=0.4` just works)
     
     Args:
         from_node: Starting node slug (e.g., "almaty")
@@ -85,22 +85,19 @@ async def calculate_route(
         
         return route
     
+    except RouteNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
     except ValueError as e:
-        # Handle validation errors (nodes not found, invalid weights, etc.)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-    
-    except Exception as e:
-        # Handle unexpected errors
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to calculate route: {str(e)}"
-        )
+        # Invalid weights
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    # Anything else propagates to the global handler, which logs the traceback
+    # and returns a generic 500 — exception text is not echoed to clients.
 
 
 @router.get("/alternatives", response_model=RouteAlternativesResponse)
+@cache(expire=settings.ROUTE_CACHE_TTL_S, namespace=ROUTES_NAMESPACE, key_builder=route_key_builder)
 async def calculate_route_alternatives(
     from_node: str = Query(..., description="Starting node slug (e.g., 'almaty')"),
     to_tourist_point: str = Query(..., description="Destination tourist point slug"),
@@ -111,7 +108,7 @@ async def calculate_route_alternatives(
 
     Runs 5 Dijkstra profiles simultaneously (sharing one graph build) and
     returns ALL unique route alternatives, deduplicated and labelled:
-      - Optimal  (balanced: time 35%, cost 30%, comfort 20%, CO2 15%)
+      - Optimal  (balanced: time 45%, cost 35%, comfort 10%, CO2 10%)
       - Fastest  (time 85%)
       - Cheapest (cost 85%)
       - Comfort  (comfort 80%)
@@ -131,14 +128,12 @@ async def calculate_route_alternatives(
         )
         return alternatives
 
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+    except RouteNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to calculate route alternatives: {str(e)}"
-        )
+    except ValueError as e:
+        # Invalid weights
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    # Anything else propagates to the global handler, which logs the traceback
+    # and returns a generic 500 — exception text is not echoed to clients.

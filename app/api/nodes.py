@@ -6,19 +6,19 @@ Supports filtering by node_type and name search to avoid having to memorize IDs.
 """
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query, status
-from fastapi.params import Depends
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from slugify import slugify
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func
 from sqlalchemy.future import select
 
 from app.core.database import get_db
 from app.enums import NodeType
-from app.models import Node
+from app.models import Node, TransportSegment, PointNode
 from app.schemas import NodeResponse, NodeCreate, NodeUpdate
 from app.core.auth import require_api_key
-from app.services.coordinates import geocode_async
+from app.services.coordinates import geocode_async, GeocodingUnavailable
 
 router = APIRouter(prefix="/transport-nodes", tags=["Transport Nodes"])
 
@@ -84,11 +84,23 @@ async def create_node(node_data: NodeCreate, db: AsyncSession = Depends(get_db))
     if exists:
         raise HTTPException(409, "Node exists")
 
-    # async geocoding
-    if not node_data.latitude and not node_data.longitude:
-        geo = await geocode_async(node_data.name)
+    # Geocode when EITHER coordinate is missing. (`not latitude` would also
+    # treat a legitimate 0.0 as missing, and `and` let a half-filled pair through.)
+    if node_data.latitude is None or node_data.longitude is None:
+        try:
+            geo = await geocode_async(node_data.name)
+        except GeocodingUnavailable:
+            raise HTTPException(
+                status_code=503,
+                detail="Geocoding service is unavailable. Retry later or supply "
+                       "latitude and longitude explicitly."
+            )
         if not geo:
-            raise HTTPException(404, f"Target location: {node_data.name} not found")
+            raise HTTPException(
+                status_code=422,
+                detail=f"Could not find coordinates for '{node_data.name}'. "
+                       f"Supply latitude and longitude explicitly."
+            )
 
         node_data.latitude = float(geo["lat"])
         node_data.longitude = float(geo["lon"])
@@ -110,6 +122,8 @@ async def update_node(node_id: int, node_data: NodeUpdate, db: AsyncSession = De
         raise HTTPException(status_code=404, detail="Node not found")
 
     for key, value in node_data.model_dump(exclude_unset=True).items():
+        if value is None:
+            continue  # every Node column is NOT NULL: null means "leave as is"
         setattr(node, key, value)
 
     await db.commit()
@@ -126,6 +140,24 @@ async def delete_node(node_id: int, db: AsyncSession = Depends(get_db)):
     node = result.scalars().first()
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
+
+    # A node that is still part of the graph must not vanish silently: that
+    # would cut routes. Make the admin remove its connections deliberately.
+    segments = (await db.execute(
+        select(func.count()).select_from(TransportSegment).filter(
+            (TransportSegment.from_node_id == node_id) | (TransportSegment.to_node_id == node_id)
+        )
+    )).scalar_one()
+    access_points = (await db.execute(
+        select(func.count()).select_from(PointNode).filter(PointNode.node_id == node_id)
+    )).scalar_one()
+    if segments or access_points:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Node is still used by {segments} transport segment(s) and "
+                   f"{access_points} point node(s). Delete those first."
+        )
+
     await db.delete(node)
     await db.commit()
     return None

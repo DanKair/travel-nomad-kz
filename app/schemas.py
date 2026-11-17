@@ -5,7 +5,7 @@ All schemas use Pydantic v2 with model_config for ORM mode.
 Schemas are organized by domain entity.
 """
 from decimal import Decimal
-from typing import Optional, List
+from typing import Optional, List, Literal
 from pydantic import BaseModel, Field, ConfigDict
 from app.enums import TransportMode, NodeType, AccessType
 
@@ -80,11 +80,11 @@ class NodeCreate(NodeBase):
 
 class NodeUpdate(BaseModel):
     """Schema for updating a node (all fields optional)."""
-    name: Optional[str] = Field(None, max_length=100, description="Node name")
-    slug: Optional[str] = Field(None, max_length=100, description="URL-friendly identifier")
+    name: Optional[str] = Field(None, max_length=200, description="Node name")
+    slug: Optional[str] = Field(None, max_length=200, description="URL-friendly identifier")
     latitude: Optional[float] = Field(None, ge=-90, le=90)
     longitude: Optional[float] = Field(None, ge=-180, le=180)
-    node_type: NodeType = Field(None, description="Type of transportation node")
+    node_type: Optional[NodeType] = Field(None, description="Type of transportation node")
 
 
 class NodeResponse(NodeBase):
@@ -103,8 +103,16 @@ class TransportSegmentBase(BaseModel):
     from_node_id: int = Field(..., description="Origin node ID")
     to_node_id: int = Field(..., description="Destination node ID")
     transport_mode: TransportMode = Field(..., description="Transportation mode")
-    time_minutes: int = Field(..., gt=0, description="Travel time in minutes.")
-    cost: Decimal = Field(..., ge=0, description="Cost in KZT (Kazakhstan Tenge)")
+    time_minutes: Optional[int] = Field(
+        None, gt=0,
+        description="Travel time in minutes. Leave blank to auto-estimate "
+                    "(OSRM duration for road modes, speed model otherwise). "
+                    "Supply it when you know the real schedule."
+    )
+    cost: Optional[Decimal] = Field(
+        None, ge=0,
+        description="Cost in KZT. Leave blank to auto-estimate from the tariff model."
+    )
     distance_km: Optional[float] = Field(
         None, gt=0,
         description="Distance in km. Leave blank to auto-calculate from node coordinates."
@@ -120,24 +128,63 @@ class TransportSegmentBase(BaseModel):
 
 class TransportSegmentCreate(TransportSegmentBase):
     """Schema for creating a new transport segment."""
-    pass
+    create_reverse: bool = Field(
+        False,
+        description="Also create the opposite direction (to → from) with the same "
+                    "metrics. The routing graph is directed, so a two-way "
+                    "connection needs both edges."
+    )
 
 
 class SegmentEstimateRequest(BaseModel):
     """Request schema for the dry-run /estimate endpoint."""
     from_node_id: int = Field(..., description="Origin node ID")
     to_node_id: int = Field(..., description="Destination node ID")
-    cost: Decimal = Field(..., ge=0, description="Cost in KZT (Kazakhstan Tenge)")
     transport_mode: TransportMode = Field(..., description="Transportation mode to estimate for")
 
 
 class SegmentEstimateResponse(BaseModel):
-    """Response from /estimate — preview distance values before committing a segment."""
+    """Response from /estimate — preview every auto-calculated value before committing."""
     transport_mode: TransportMode
     distance_km: float
+    time_minutes: int
+    cost: Decimal
     co2_kg: float
     comfort_score: float
-    distance_strategy: str = Field(..., description="Algorithm used: haversine | osrm | haversine_x_detour")
+    distance_strategy: str = Field(
+        ..., description="haversine | osrm | haversine_x_detour | haversine_fallback (OSRM was unreachable)"
+    )
+    time_strategy: str = Field(..., description="osrm_duration | speed_model")
+
+
+SegmentField = Literal["distance_km", "time_minutes", "cost", "co2_kg", "comfort_score"]
+
+
+class SegmentRecalculateRequest(BaseModel):
+    """Which stored fields to overwrite with fresh estimates."""
+    fields: List[SegmentField] = Field(
+        ..., min_length=1,
+        description="Fields to re-estimate. Only these are overwritten; everything else is kept."
+    )
+
+
+class PriceCheckItem(BaseModel):
+    """One segment whose stored price disagrees with the tariff model."""
+    segment_id: int
+    from_node: str
+    to_node: str
+    transport_mode: TransportMode
+    distance_km: float
+    stored_cost: Decimal
+    estimated_cost: Decimal
+    deviation_pct: float = Field(..., description="+ = stored price above the model, - = below")
+
+
+class PriceCheckResponse(BaseModel):
+    threshold_pct: float
+    checked_count: int
+    flagged_count: int
+    flagged: List[PriceCheckItem]
 
 
 class TransportSegmentUpdate(BaseModel):
@@ -227,7 +274,7 @@ class PointNodeBase(BaseModel):
     access_type: AccessType = Field(..., description="Last-mile access type")
     distance_km: Optional[float] = Field(None, gt=0, description="Last-mile distance in km")
     time_minutes: Optional[int] = Field(None, gt=0, description="Last-mile time in minutes")
-    cost: Decimal  = Field(Decimal("0.0"), ge=0, description="Last-mile cost in KZT")
+    cost: Optional[Decimal] = Field(None, ge=0, description="Last-mile cost in KZT. Leave blank to auto-estimate.")
     comfort_score: Optional[float] = Field(None, ge=1, le=10, description="Last-mile comfort score")
     co2_kg: Optional[float] = Field(None, ge=0, description="Last-mile CO2 in kg")
     description: Optional[str] = Field(None, description="Access instructions")
@@ -243,7 +290,6 @@ class PointNodeEstimateRequest(BaseModel):
     tourist_point_id: int = Field(..., description="Tourist point ID")
     node_id: int = Field(..., description="Node ID")
     access_type: AccessType = Field(..., description="Last-mile access type")
-    cost: Decimal = Field(0.0, ge=0, description="Estimated cost in KZT")
 
 
 class PointNodeEstimateResponse(BaseModel):
@@ -251,9 +297,26 @@ class PointNodeEstimateResponse(BaseModel):
     access_type: AccessType
     distance_km: float
     time_minutes: int
+    cost: Decimal
     co2_kg: float
     comfort_score: float
     distance_strategy: str
+    time_strategy: str
+
+
+class PointNodeAutoConnectRequest(BaseModel):
+    """Link a tourist point to its nearest transport node(s) in one call."""
+    tourist_point_id: int = Field(..., description="Tourist point ID")
+    max_nodes: int = Field(1, ge=1, le=5, description="How many nearest nodes to connect")
+    max_radius_km: float = Field(
+        300, gt=0, le=1000,
+        description="Ignore nodes further away than this (straight-line distance)"
+    )
+    access_type: Optional[AccessType] = Field(
+        None,
+        description="Access type to use. Default: walk when the node is within "
+                    "1.5 km, taxi otherwise."
+    )
 
 
 class PointNodeResponse(PointNodeBase):

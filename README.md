@@ -262,35 +262,67 @@ This codebase is heavily documented for learning! Key files to study:
 
 ## 🛠️ Development
 
-### Adding New Tourist Points
+### Admin workflow: adding a destination via the API
 
-```python
-# In scripts/seed_data.py or via API
-new_point = TouristPoint(
-    name="Big Almaty Lake",
-    slug="big-almaty-lake",
-    description="Stunning mountain lake",
-    latitude=43.0539,
-    longitude=76.9900,
-    region_id=almaty_region.id,
-    category_id=nature_category.id
-)
+All write endpoints need the `X-API-Key` header. Only the fields shown are
+required — distance, travel time, price, CO2 and comfort are estimated
+automatically and any value you supply overrides the estimate.
+
+```bash
+API=http://localhost:8000/api
+KEY="X-API-Key: $TEAM_API_KEY"
+JSON="Content-Type: application/json"
+
+# 1. A transport node (coordinates are geocoded from the name if omitted)
+curl -X POST $API/transport-nodes -H "$KEY" -H "$JSON" \
+  -d '{"name": "Saty", "node_type": "village"}'
+
+# 2. Preview a segment, then create it in both directions
+curl -X POST $API/transport-segments/estimate -H "$KEY" -H "$JSON" \
+  -d '{"from_node_id": 1, "to_node_id": 10, "transport_mode": "marshrutka"}'
+curl -X POST $API/transport-segments -H "$KEY" -H "$JSON" \
+  -d '{"from_node_id": 1, "to_node_id": 10, "transport_mode": "marshrutka", "create_reverse": true}'
+
+# 3. The tourist point, then link it to its nearest node(s)
+curl -X POST $API/tourist-points -H "$KEY" -H "$JSON" \
+  -d '{"name": "Kolsai Lakes", "region_id": 1, "category_id": 1}'
+curl -X POST $API/point-nodes/auto-connect -H "$KEY" -H "$JSON" \
+  -d '{"tourist_point_id": 8}'
+
+# 4. It is routable
+curl "$API/routes/alternatives?from_node=almaty&to_tourist_point=kolsai-lakes"
 ```
 
-### Adding Transport Routes
+### Price checking
 
-```python
-new_segment = TransportSegment(
-    from_node_id=city_a.id,
-    to_node_id=city_b.id,
-    transport_mode=TransportMode.BUS,
-    distance_km=150,
-    time_minutes=120,
-    cost=2000,
-    comfort_score=6.0,
-    co2_kg=10.0
-)
+```bash
+# Segments whose stored price is >30% away from the tariff model
+curl "$API/transport-segments/price-check?threshold_pct=30" -H "$KEY"
+
+# Accept the model's value for one segment (only the listed fields change)
+curl -X POST $API/transport-segments/5/recalculate -H "$KEY" -H "$JSON" \
+  -d '{"fields": ["cost"]}'
 ```
+
+The tariff model (`base fare + per-km rate`, in `app/constants.py`) is an
+**estimate fitted to the seed data, not a live price feed**. Use it for
+defaults and for spotting typos or stale fares; re-tune the constants when
+real prices move.
+
+`distance_strategy: "haversine_fallback"` in a response means the road-routing
+service (OSRM) was unreachable and the distance is a straight-line
+approximation — re-run `/recalculate` with `["distance_km", "time_minutes"]`
+later. Set `OSRM_BASE_URL` to a self-hosted instance for production.
+
+### Tests
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest
+```
+
+The suite uses a temporary SQLite database and fake OSRM/Nominatim servers, so
+it needs no network, Postgres or Redis.
 
 ## 🚧 Future Enhancements (Not in MVP)
 
