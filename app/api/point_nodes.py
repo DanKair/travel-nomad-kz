@@ -11,19 +11,33 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.constants import CO2_PER_KM_ACCESS, COMFORT_SCORE_ACCESS
 from app.core.database import get_db
+from app.enums import AccessType
 from app.models import PointNode, TouristPoint, Node
 from app.schemas import (
-    PointNodeResponse, 
-    PointNodeCreate, 
-    PointNodeEstimateRequest, 
-    PointNodeEstimateResponse
+    PointNodeResponse,
+    PointNodeCreate,
+    PointNodeEstimateRequest,
+    PointNodeEstimateResponse,
+    PointNodeAutoConnectRequest,
 )
 from app.core.auth import require_api_key
-from app.services.distance import estimate_distance
+from app.services.distance import estimate_travel, haversine_km, MissingCoordinatesError
+from app.services.pricing import (
+    EstimatedMetrics,
+    estimate_metrics,
+    estimate_cost,
+    estimate_time_minutes,
+    estimate_co2,
+    default_comfort,
+)
 
 router = APIRouter(prefix="/point-nodes", tags=["Point Nodes (Last-Mile Access)"])
+
+_METRIC_FIELDS = ("distance_km", "time_minutes", "cost", "co2_kg", "comfort_score")
+
+# Within this straight-line distance a node counts as "walkable" for auto-connect.
+_WALKABLE_KM = 1.5
 
 # =============================================================================
 # HELPERS
@@ -43,44 +57,62 @@ async def _get_node_or_404(db: AsyncSession, node_id: int) -> Node:
         raise HTTPException(status_code=404, detail=f"Node (id={node_id}) not found")
     return node
 
-async def _fill_access_auto_fields(data: dict, point: TouristPoint, node: Node) -> dict:
-    """
-    Auto-calculate distance, time, CO2, and comfort for PointNode if missing.
-    """
-    access_type = data.get("access_type")
-    
-    # Calculate distance if missing
-    if data.get("distance_km") is None:
-        data["distance_km"] = await estimate_distance(
-            from_lat=node.latitude,  from_lon=node.longitude,
-            to_lat=point.latitude,   to_lon=point.longitude,
-            mode=access_type
+async def _estimate_access(point: TouristPoint, node: Node, access_type: AccessType) -> EstimatedMetrics:
+    """Distance lookup node → tourist point, plus every metric derived from it."""
+    try:
+        travel = await estimate_travel(
+            node.latitude, node.longitude, point.latitude, point.longitude, access_type
         )
-        
-    distance_km = data["distance_km"]
-    
-    # Calculate time if missing
-    if data.get("time_minutes") is None:
-        speed_map = {"walk": 5.0, "taxi": 30.0, "bus": 25.0, "shuttle": 25.0, "car": 30.0}
-        speed = speed_map.get(access_type.value, 20.0)
-        time_mins = int((distance_km / speed) * 60) if speed > 0 else 0
-        data["time_minutes"] = max(1, time_mins) if distance_km > 0 else 0
-        
-    # Calculate CO2 if missing
-    if data.get("co2_kg") is None:
-        data["co2_kg"] = round(CO2_PER_KM_ACCESS[access_type] * distance_km, 3)
-        
-    # Calculate comfort if missing
-    if data.get("comfort_score") is None:
-        data["comfort_score"] = COMFORT_SCORE_ACCESS[access_type]
-        
+    except MissingCoordinatesError:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Tourist point '{point.name}' has no coordinates. Set its latitude/longitude "
+                   f"first, or supply distance_km manually."
+        )
+    return estimate_metrics(access_type, travel)
+
+async def _fill_access_auto_fields(data: dict, point: TouristPoint, node: Node) -> dict:
+    """Fill distance, time, cost, CO2 and comfort for a PointNode where missing."""
+    access_type = data["access_type"]
+
+    if data.get("distance_km") is None:
+        estimated = await _estimate_access(point, node, access_type)
+        defaults = {f: getattr(estimated, f) for f in _METRIC_FIELDS}
+    else:
+        distance_km = data["distance_km"]
+        defaults = {
+            "time_minutes": estimate_time_minutes(access_type, distance_km)[0],
+            "cost": estimate_cost(access_type, distance_km),
+            "co2_kg": estimate_co2(access_type, distance_km),
+            "comfort_score": default_comfort(access_type),
+        }
+
+    for field in _METRIC_FIELDS:
+        if data.get(field) is None:
+            data[field] = defaults[field]
     return data
+
+async def _reject_duplicate(db: AsyncSession, point_id: int, node_id: int, access_type: AccessType) -> None:
+    result = await db.execute(
+        select(PointNode).filter(
+            PointNode.tourist_point_id == point_id,
+            PointNode.node_id == node_id,
+            PointNode.access_type == access_type,
+        )
+    )
+    if result.scalars().first():
+        raise HTTPException(
+            status_code=409,
+            detail=f"This tourist point already has '{access_type.value}' access from that node."
+        )
 
 # =============================================================================
 # ENDPOINTS
 # =============================================================================
 
-@router.post("/estimate", response_model=PointNodeEstimateResponse)
+@router.post("/estimate",
+             response_model=PointNodeEstimateResponse,
+             dependencies=[Depends(require_api_key)])
 async def estimate_point_node(
     body: PointNodeEstimateRequest,
     db: AsyncSession = Depends(get_db)
@@ -91,38 +123,98 @@ async def estimate_point_node(
     """
     point = await _get_tourist_point_or_404(db, body.tourist_point_id)
     node = await _get_node_or_404(db, body.node_id)
-    
-    # Coordinates for estimation
-    # TouristPoint uses its own lat/lon
-    # Node uses its own lat/lon
-    
-    distance_km = await estimate_distance(
-        from_lat=node.latitude,  from_lon=node.longitude,
-        to_lat=point.latitude,   to_lon=point.longitude,
-        mode=body.access_type
-    )
-    
-    # Speed estimation: rough average for access types (km/h)
-    speed_map = {
-        "walk": 5.0,
-        "taxi": 30.0,
-        "bus": 25.0,
-        "shuttle": 25.0,
-        "car": 30.0
-    }
-    speed = speed_map.get(body.access_type.value, 20.0)
-    time_minutes = int((distance_km / speed) * 60) if speed > 0 else 0
-    if time_minutes == 0 and distance_km > 0:
-        time_minutes = 1 # Minimum 1 minute if there is distance
-        
+
+    m = await _estimate_access(point, node, body.access_type)
     return PointNodeEstimateResponse(
         access_type=body.access_type,
-        distance_km=distance_km,
-        time_minutes=max(1, time_minutes),
-        co2_kg=round(CO2_PER_KM_ACCESS[body.access_type] * distance_km, 3),
-        comfort_score=COMFORT_SCORE_ACCESS[body.access_type],
-        distance_strategy="osrm" if body.access_type != "walk" else "haversine"
+        distance_km=m.distance_km,
+        time_minutes=m.time_minutes,
+        cost=m.cost,
+        co2_kg=m.co2_kg,
+        comfort_score=m.comfort_score,
+        distance_strategy=m.distance_strategy,
+        time_strategy=m.time_strategy,
     )
+
+@router.post("/auto-connect",
+             response_model=List[PointNodeResponse],
+             status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_api_key)])
+async def auto_connect_tourist_point(
+    body: PointNodeAutoConnectRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Make a tourist point routable in one call: find its nearest transport
+    node(s) and create the last-mile access with estimated metrics.
+
+    A tourist point with no PointNode cannot be reached by the router at all,
+    so this is the usual next step after `POST /tourist-points`.
+
+    Nearest = straight-line distance. That is a heuristic: a node across a
+    mountain ridge can be "near" but badly connected, so review the result
+    (the response shows the real road distance) and delete what does not fit.
+    """
+    point = await _get_tourist_point_or_404(db, body.tourist_point_id)
+    if point.latitude is None or point.longitude is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Tourist point '{point.name}' has no coordinates to measure from."
+        )
+
+    nodes = (await db.execute(select(Node))).scalars().all()
+    ranked = sorted(
+        ((haversine_km(n.latitude, n.longitude, point.latitude, point.longitude), n) for n in nodes),
+        key=lambda pair: pair[0],
+    )
+    candidates = [(d, n) for d, n in ranked if d <= body.max_radius_km]
+    if not candidates:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No transport node within {body.max_radius_km} km of '{point.name}'. "
+                   f"Create a node nearby first, or raise max_radius_km."
+        )
+
+    existing = (await db.execute(
+        select(PointNode).filter(PointNode.tourist_point_id == point.id)
+    )).scalars().all()
+    taken = {(pn.node_id, pn.access_type) for pn in existing}
+
+    created: List[PointNode] = []
+    for straight_km, node in candidates:
+        if len(created) >= body.max_nodes:
+            break
+        access_type = body.access_type or (
+            AccessType.WALK if straight_km <= _WALKABLE_KM else AccessType.TAXI
+        )
+        if (node.id, access_type) in taken:
+            continue
+        m = await _estimate_access(point, node, access_type)
+        pn = PointNode(
+            tourist_point_id=point.id,
+            node_id=node.id,
+            access_type=access_type,
+            distance_km=m.distance_km,
+            time_minutes=m.time_minutes,
+            cost=m.cost,
+            co2_kg=m.co2_kg,
+            comfort_score=m.comfort_score,
+            description=f"Auto-connected: {access_type.value} from {node.name} "
+                        f"(distance via {m.distance_strategy}).",
+        )
+        db.add(pn)
+        created.append(pn)
+
+    if not created:
+        raise HTTPException(
+            status_code=409,
+            detail="The nearest node(s) are already connected to this tourist point."
+        )
+
+    await db.commit()
+    for pn in created:
+        await db.refresh(pn)
+    return created
 
 @router.get("", response_model=List[PointNodeResponse])
 async def get_point_nodes(
@@ -139,9 +231,9 @@ async def get_point_nodes(
     """
     query = select(PointNode)
     
-    if tourist_point_id:
+    if tourist_point_id is not None:
         query = query.filter(PointNode.tourist_point_id == tourist_point_id)
-    if node_id:
+    if node_id is not None:
         query = query.filter(PointNode.node_id == node_id)
     
     result = await db.execute(query)
@@ -164,14 +256,15 @@ async def create_point_node(point_node_data: PointNodeCreate, db: AsyncSession =
     """
     Create a new point node (last-mile access).
     
-    Metrics (distance, time, CO2, comfort) are auto-calculated if omitted.
+    Metrics (distance, time, cost, CO2, comfort) are auto-calculated if omitted.
     """
     point = await _get_tourist_point_or_404(db, point_node_data.tourist_point_id)
     node = await _get_node_or_404(db, point_node_data.node_id)
-    
+    await _reject_duplicate(db, point.id, node.id, point_node_data.access_type)
+
     data = point_node_data.model_dump()
     data = await _fill_access_auto_fields(data, point, node)
-    
+
     new_point_node = PointNode(**data)
     db.add(new_point_node)
     await db.commit()
@@ -186,20 +279,23 @@ async def update_point_node(
     point_node_data: PointNodeCreate, 
     db: AsyncSession = Depends(get_db)
 ):
-    """Update an existing point node (recalculates missing metrics if access_type changes)."""
+    """
+    Replace a point node. PUT is a full replacement: any metric you leave out
+    is re-estimated for the (possibly new) node / point / access type, so a
+    stale distance can never survive a change of endpoints.
+    """
     result = await db.execute(select(PointNode).filter(PointNode.id == point_node_id))
     point_node = result.scalars().first()
     if not point_node:
         raise HTTPException(status_code=404, detail="Point node not found")
-    
-    # Logic similar to transport segment updates
-    update_data = point_node_data.model_dump(exclude_unset=True)
-    
-    # If access_type or distance changes, we should ideally re-fill other fields if they are missing
-    # But for now, just apply the provided data
-    for field, value in update_data.items():
+
+    point = await _get_tourist_point_or_404(db, point_node_data.tourist_point_id)
+    node = await _get_node_or_404(db, point_node_data.node_id)
+
+    data = await _fill_access_auto_fields(point_node_data.model_dump(), point, node)
+    for field, value in data.items():
         setattr(point_node, field, value)
-    
+
     await db.commit()
     await db.refresh(point_node)
     return point_node

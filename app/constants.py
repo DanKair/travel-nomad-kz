@@ -74,3 +74,82 @@ COMFORT_SCORE_ACCESS: dict[AccessType, float] = {
     AccessType.BUS:     5.0,
     AccessType.WALK:    7.0,  # Pleasant when short, healthy, no waiting
 }
+
+
+# =============================================================================
+# TARIFFS  (cost estimation in KZT)
+# =============================================================================
+# Formula:  cost = base_fare + per_km * distance_km   (rounded to 50 KZT)
+#
+#   base_fare → what you pay before moving a metre (ticket booking fee,
+#               taxi pick-up charge, airport taxes)
+#   per_km    → the marginal price of one more kilometre
+#
+# ⚠️  These are ESTIMATES, fitted to the hand-entered prices in
+#     scripts/seed_data.py — they are not a live price feed. Treat the
+#     output as a sensible default and a sanity check, and re-tune the
+#     numbers here when real prices drift (fuel price, new fares).
+#     Values are (base_fare, per_km).
+
+TARIFF_KZT: dict[TransportMode, tuple[float, float]] = {
+    TransportMode.PLANE:      (15000.0,   8.0),
+    TransportMode.TRAIN:      (800.0,     5.0),
+    TransportMode.BUS:        (500.0,     5.5),
+    TransportMode.MARSHRUTKA: (300.0,     5.5),
+    TransportMode.TAXI:       (1000.0,  125.0),
+    TransportMode.CAR:        (0.0,      30.0),  # fuel + wear, no driver
+    TransportMode.CABLE_CAR:  (2500.0,    0.0),  # flat ticket
+}
+
+TARIFF_KZT_ACCESS: dict[AccessType, tuple[float, float]] = {
+    AccessType.WALK:    (0.0,      0.0),
+    AccessType.TAXI:    (1000.0, 125.0),
+    AccessType.CAR:     (0.0,     30.0),
+    AccessType.BUS:     (120.0,    5.0),   # city / suburban bus
+    AccessType.SHUTTLE: (500.0,   15.0),
+}
+
+# Estimated prices are rounded to this step so they look like real fares.
+COST_ROUNDING_KZT = 50
+
+
+# =============================================================================
+# TRAVEL TIME ESTIMATION
+# =============================================================================
+# Road modes: when OSRM answers we take ITS driving duration and stretch it by
+# ROAD_TIME_FACTOR (a bus stops and is slower than a private car).
+# When OSRM is unavailable, or for non-road modes, we fall back to
+#     time = overhead_minutes + distance_km / speed_kmh * 60
+# Values are (speed_kmh, overhead_minutes).
+
+SPEED_PROFILE: dict[TransportMode, tuple[float, float]] = {
+    TransportMode.PLANE:      (650.0, 40.0),  # taxiing, climb, descent
+    TransportMode.TRAIN:      (75.0,   0.0),
+    TransportMode.BUS:        (55.0,   0.0),
+    TransportMode.MARSHRUTKA: (60.0,   0.0),
+    TransportMode.TAXI:       (70.0,   0.0),
+    TransportMode.CAR:        (70.0,   0.0),
+    TransportMode.CABLE_CAR:  (18.0,   5.0),
+}
+
+SPEED_PROFILE_ACCESS: dict[AccessType, tuple[float, float]] = {
+    AccessType.WALK:    (5.0,  0.0),
+    AccessType.TAXI:    (50.0, 0.0),
+    AccessType.CAR:     (50.0, 0.0),
+    AccessType.BUS:     (30.0, 5.0),
+    AccessType.SHUTTLE: (40.0, 5.0),
+}
+
+ROAD_TIME_FACTOR: dict[TransportMode, float] = {
+    TransportMode.TAXI:       1.00,
+    TransportMode.CAR:        1.00,
+    TransportMode.MARSHRUTKA: 1.15,
+    TransportMode.BUS:        1.25,
+}
+
+ROAD_TIME_FACTOR_ACCESS: dict[AccessType, float] = {
+    AccessType.TAXI:    1.00,
+    AccessType.CAR:     1.00,
+    AccessType.SHUTTLE: 1.15,
+    AccessType.BUS:     1.30,
+}

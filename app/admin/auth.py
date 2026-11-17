@@ -8,7 +8,7 @@ from app.models import AdminUser
 from sqlalchemy.future import select
 from passlib.context import CryptContext
 from app.redis import get_redis_client
-from app.core.auth import is_admin_ip
+from app.core.auth import is_admin_ip, get_client_ip
 from app.core.database import SessionLocal
 from redis import exceptions as redis_exceptions
 
@@ -45,7 +45,7 @@ class AdminAuth(AuthenticationBackend):
 
         # 2. Brute-force protection via Redis
         redis = get_redis_client()
-        client_ip = request.headers.get("X-Forwarded-For", request.client.host).split(",")[0].strip()
+        client_ip = get_client_ip(request)
         attempts_key = f"admin_login_attempts:{client_ip}"
         
         try:

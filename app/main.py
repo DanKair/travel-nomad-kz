@@ -11,7 +11,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
-from app.redis import get_redis_client, close_redis
+from sqlalchemy.exc import IntegrityError
+from app.cache import invalidate_route_cache
+from app.services.distance import close_http_client
+from app.redis import get_cache_redis_client, close_redis
 from app.core.config import settings
 from app.core.database import init_db, engine
 from app.api import regions, tourist_points, routing, tourist_point_categories, point_nodes, transport_segments, nodes
@@ -37,14 +40,22 @@ async def lifespan(app: FastAPI):
     print("✅ Database initialized")
     
     # Initialize Redis Cache
-    redis_client = get_redis_client()
-    FastAPICache.init(RedisBackend(redis_client), prefix="fastapi-cache")
+    FastAPICache.init(RedisBackend(get_cache_redis_client()), prefix="fastapi-cache")
     print("✅ Redis Caching initialized")
+
+    insecure = settings.insecure_defaults()
+    if insecure and not settings.DEBUG:
+        logger.critical(
+            "SECURITY: %s still set to the built-in development value(s). "
+            "Anyone who has read this repository can write to the API / forge "
+            "admin sessions. Set real values in .env.", ", ".join(insecure)
+        )
 
     yield
     
     # Shutdown (cleanup if needed)
     print("👋 Shutting down...")
+    await close_http_client()
     await close_redis()
 
 
@@ -98,6 +109,30 @@ app.add_middleware(
 # Sesion management for Admin Panel
 app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
 
+
+_WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+@app.middleware("http")
+async def invalidate_routes_on_write(request: Request, call_next):
+    """
+    Any successful write through the API or the admin panel may change the
+    routing graph, so cached routes are dropped. Doing it here (one place)
+    means a new endpoint can never forget to invalidate.
+    Dry-run /estimate calls and failed requests leave the cache alone.
+    """
+    response = await call_next(request)
+    path = request.url.path
+    if (
+        request.method in _WRITE_METHODS
+        and response.status_code < 400
+        and ("/api/" in path or "/admin/" in path)
+        and not path.endswith("/estimate")
+    ):
+        await invalidate_route_cache()
+    return response
+
+
 # Register routers with /api prefix
 app.include_router(regions.router, prefix="/api")
 app.include_router(tourist_points.router, prefix="/api")
@@ -115,6 +150,22 @@ if settings.ENABLE_ADMIN:
     print("✅ SQLAdmin Panel enabled at /admin")
 else:
     print("🔒 SQLAdmin Panel is disabled")
+
+@app.exception_handler(IntegrityError)
+async def integrity_error_handler(request: Request, exc: IntegrityError):
+    """
+    The database refused the write: duplicate unique value, a foreign key
+    pointing at nothing, or deleting a row other rows still reference.
+    That is a conflict with existing data (409), not a server crash (500).
+    """
+    logger.info("Integrity error on %s %s: %s", request.method, request.url.path, exc.orig)
+    return JSONResponse(
+        status_code=409,
+        content={
+            "detail": "Conflict with existing data: the record already exists, "
+                      "references something that does not exist, or is still in use."
+        },
+    )
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):

@@ -162,8 +162,12 @@ def generate_node_slug(mapper, connection, target: Node):
 
 @event.listens_for(Node, "before_update")
 def update_node_slug(mapper, connection, target: Node):
-    """Keep slug in sync with name when the Node's name is updated."""
-    if target.name:
+    """
+    Only backfill a missing slug. The slug is the public identifier used in
+    route URLs, so an unrelated update (e.g. fixing coordinates) must not
+    silently replace a custom slug with slugify(name).
+    """
+    if not target.slug and target.name:
         target.slug = slugify(target.name)
 
 
@@ -314,9 +318,12 @@ class TouristPoint(Base):
     )
     
     # Last-mile access options to reach this point
+    # Access options belong to the point: deleting the point deletes them.
+    # (Without the cascade SQLAlchemy tries to NULL the FK and the delete fails.)
     point_nodes: Mapped[List["PointNode"]] = relationship(
         "PointNode",
-        back_populates="tourist_point"
+        back_populates="tourist_point",
+        cascade="all, delete-orphan"
     )
     
     def __repr__(self) -> str:
@@ -334,8 +341,8 @@ def generate_tourist_point_slug(mapper, connection, target: TouristPoint):
 
 @event.listens_for(TouristPoint, "before_update")
 def update_tourist_point_slug(mapper, connection, target: TouristPoint):
-    """Keep slug in sync with name when the TouristPoint's name is updated."""
-    if target.name:
+    """Only backfill a missing slug (see update_node_slug for the reasoning)."""
+    if not target.slug and target.name:
         target.slug = slugify(target.name)
 
 
